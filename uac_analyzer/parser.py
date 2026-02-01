@@ -243,7 +243,7 @@ class LsusbParser:
     AUDIO_STREAMING_SUBCLASS = 0x02
     MIDI_STREAMING_SUBCLASS = 0x03
 
-    # Audio Control descriptor subtypes (UAC 1.0)
+    # Audio Control descriptor subtypes (UAC 1.0/2.0)
     AC_HEADER = 0x01
     AC_INPUT_TERMINAL = 0x02
     AC_OUTPUT_TERMINAL = 0x03
@@ -258,6 +258,19 @@ class LsusbParser:
     AC_CLOCK_MULTIPLIER = 0x0C
     AC_SAMPLE_RATE_CONVERTER = 0x0D
 
+    # UAC 3.0 subtypes (shifted by 1 for units)
+    AC3_MIXER_UNIT = 0x05
+    AC3_SELECTOR_UNIT = 0x06
+    AC3_FEATURE_UNIT = 0x07
+    AC3_EFFECT_UNIT = 0x08
+    AC3_PROCESSING_UNIT = 0x09
+    AC3_EXTENSION_UNIT = 0x0A
+    AC3_CLOCK_SOURCE = 0x0B
+    AC3_CLOCK_SELECTOR = 0x0C
+    AC3_CLOCK_MULTIPLIER = 0x0D
+    AC3_SAMPLE_RATE_CONVERTER = 0x0E
+    AC3_CONNECTORS = 0x0F
+
     # Audio Streaming descriptor subtypes
     AS_GENERAL = 0x01
     AS_FORMAT_TYPE = 0x02
@@ -268,6 +281,7 @@ class LsusbParser:
         self.text = text
         self.lines: list[LsusbLine] = []
         self.pos = 0
+        self._uac_version: UACVersion = UACVersion.UNKNOWN
         self._tokenize()
 
     def _tokenize(self) -> None:
@@ -644,29 +658,31 @@ class LsusbParser:
                 break
             self._advance()
 
-        # Reset to parse full descriptor based on subtype
-        # Continue from current position
+        # Dispatch based on subtype, using version-aware lookup for overlapping codes
+        # UAC 3.0 shifts unit subtypes by 1, causing overlaps with UAC 2.0 clock entities
+        is_uac3 = self._uac_version == UACVersion.UAC_3_0
+
         if subtype == self.AC_HEADER:
             self._parse_ac_header(device.audio_control, start_indent)
         elif subtype == self.AC_INPUT_TERMINAL:
             self._parse_input_terminal(device.audio_control, start_indent)
         elif subtype == self.AC_OUTPUT_TERMINAL:
             self._parse_output_terminal(device.audio_control, start_indent)
-        elif subtype == self.AC_FEATURE_UNIT:
-            self._parse_feature_unit(device.audio_control, start_indent)
-        elif subtype == self.AC_MIXER_UNIT:
+        elif subtype == self.AC_MIXER_UNIT or (is_uac3 and subtype == self.AC3_MIXER_UNIT):
             self._parse_mixer_unit(device.audio_control, start_indent)
-        elif subtype == self.AC_SELECTOR_UNIT:
+        elif subtype == self.AC_SELECTOR_UNIT or (is_uac3 and subtype == self.AC3_SELECTOR_UNIT):
             self._parse_selector_unit(device.audio_control, start_indent)
-        elif subtype == self.AC_PROCESSING_UNIT:
+        elif subtype == self.AC_FEATURE_UNIT or (is_uac3 and subtype == self.AC3_FEATURE_UNIT):
+            self._parse_feature_unit(device.audio_control, start_indent)
+        elif subtype == self.AC_PROCESSING_UNIT or (is_uac3 and subtype == self.AC3_PROCESSING_UNIT):
             self._parse_processing_unit(device.audio_control, start_indent)
-        elif subtype == self.AC_EXTENSION_UNIT:
+        elif subtype == self.AC_EXTENSION_UNIT or (is_uac3 and subtype == self.AC3_EXTENSION_UNIT):
             self._parse_extension_unit(device.audio_control, start_indent)
-        elif subtype == self.AC_CLOCK_SOURCE:
+        elif subtype == self.AC_CLOCK_SOURCE or (is_uac3 and subtype == self.AC3_CLOCK_SOURCE):
             self._parse_clock_source(device.audio_control, start_indent)
-        elif subtype == self.AC_CLOCK_SELECTOR:
+        elif subtype == self.AC_CLOCK_SELECTOR or (is_uac3 and subtype == self.AC3_CLOCK_SELECTOR):
             self._parse_clock_selector(device.audio_control, start_indent)
-        elif subtype == self.AC_CLOCK_MULTIPLIER:
+        elif subtype == self.AC_CLOCK_MULTIPLIER or (is_uac3 and subtype == self.AC3_CLOCK_MULTIPLIER):
             self._parse_clock_multiplier(device.audio_control, start_indent)
         else:
             # Skip unknown descriptor
@@ -684,10 +700,14 @@ class LsusbParser:
             if content.startswith("bcdADC"):
                 header.bcd_adc = self._parse_bcd_value(content)
                 # Determine UAC version from bcdADC
-                if header.bcd_adc >= 0x0200:
+                if header.bcd_adc >= 0x0300:
+                    header.uac_version = UACVersion.UAC_3_0
+                elif header.bcd_adc >= 0x0200:
                     header.uac_version = UACVersion.UAC_2_0
                 else:
                     header.uac_version = UACVersion.UAC_1_0
+                # Store on parser for version-aware subtype dispatch
+                self._uac_version = header.uac_version
             elif content.startswith("wTotalLength"):
                 header.total_length = self._parse_int_value(content)
             elif content.startswith("bInCollection"):

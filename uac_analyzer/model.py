@@ -14,6 +14,7 @@ class UACVersion(Enum):
     """USB Audio Class specification version."""
     UAC_1_0 = "1.0"
     UAC_2_0 = "2.0"
+    UAC_3_0 = "3.0"
     UNKNOWN = "unknown"
 
 
