@@ -253,6 +253,12 @@ class LsusbParser:
         start_indent = self._current().indent
         self._advance()
 
+        # If this is a subsequent configuration, reset the audio data to avoid duplicates
+        # (Many devices report multiple identical configurations)
+        if device.configuration is not None:
+            device.audio_control = None
+            device.streaming_interfaces = []
+
         while self._current() and self._current().indent > start_indent:
             line = self._current()
             content = line.content
@@ -814,6 +820,9 @@ class LsusbParser:
                 streaming.delay = self._parse_int_value(content)
             elif content.startswith("wFormatTag"):
                 streaming.format_tag = self._parse_hex_value(content)
+            elif content.startswith("bmFormats"):
+                # UAC 2.0 format bitmask
+                streaming.bm_formats = self._parse_hex_value(content)
             elif content.startswith("bmControls"):
                 streaming.controls = self._parse_hex_value(content)
             elif content.startswith("bFormatType"):

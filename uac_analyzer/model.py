@@ -542,6 +542,7 @@ class AudioStreamingInterface:
     # UAC 2.0 specific
     controls: int = 0
     clock_source_id: int = 0
+    bm_formats: int = 0  # UAC 2.0 format bitmask
 
     # Format descriptor
     format: Optional[FormatTypeDescriptor] = None
@@ -557,9 +558,37 @@ class AudioStreamingInterface:
     FORMAT_ALAW = 0x0004
     FORMAT_MULAW = 0x0005
 
+    # UAC 2.0 bmFormats bit definitions (Type I)
+    UAC2_FORMAT_PCM = 0x00000001
+    UAC2_FORMAT_PCM8 = 0x00000002
+    UAC2_FORMAT_IEEE_FLOAT = 0x00000004
+    UAC2_FORMAT_ALAW = 0x00000008
+    UAC2_FORMAT_MULAW = 0x00000010
+    UAC2_FORMAT_RAW_DATA = 0x80000000
+
     @property
     def format_name(self) -> str:
         """Get human-readable format name."""
+        # UAC 2.0: use bmFormats bitmask
+        if self.bm_formats:
+            formats = []
+            if self.bm_formats & self.UAC2_FORMAT_PCM:
+                formats.append("PCM")
+            if self.bm_formats & self.UAC2_FORMAT_PCM8:
+                formats.append("PCM8")
+            if self.bm_formats & self.UAC2_FORMAT_IEEE_FLOAT:
+                formats.append("IEEE Float")
+            if self.bm_formats & self.UAC2_FORMAT_ALAW:
+                formats.append("A-Law")
+            if self.bm_formats & self.UAC2_FORMAT_MULAW:
+                formats.append("μ-Law")
+            if self.bm_formats & self.UAC2_FORMAT_RAW_DATA:
+                formats.append("Raw Data")
+            if formats:
+                return "/".join(formats)
+            return f"Unknown (0x{self.bm_formats:08X})"
+
+        # UAC 1.0: use format_tag
         formats = {
             0x0000: "Undefined",
             0x0001: "PCM",
