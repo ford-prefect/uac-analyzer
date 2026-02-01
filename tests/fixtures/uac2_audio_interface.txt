@@ -1,0 +1,268 @@
+Bus 003 Device 012: ID 1235:8211 Focusrite-Novation Scarlett 2i2 USB
+Device Descriptor:
+  bLength                18
+  bDescriptorType         1
+  bcdUSB               2.00
+  bDeviceClass          239 Miscellaneous Device
+  bDeviceSubClass         2
+  bDeviceProtocol         1 Interface Association
+  bMaxPacketSize0        64
+  idVendor           0x1235 Focusrite-Novation
+  idProduct          0x8211 Scarlett 2i2 USB
+  bcdDevice            6.13
+  iManufacturer           1 Focusrite
+  iProduct                2 Scarlett 2i2 USB
+  iSerial                 3 ABC123XYZ
+  bNumConfigurations      1
+  Configuration Descriptor:
+    bLength                 9
+    bDescriptorType         2
+    wTotalLength       0x0184
+    bNumInterfaces          4
+    bConfigurationValue     1
+    iConfiguration          0
+    bmAttributes         0xc0
+      Self Powered
+    MaxPower              500mA
+    Interface Association:
+      bLength                 8
+      bDescriptorType        11
+      bFirstInterface         0
+      bInterfaceCount         3
+      bFunctionClass          1 Audio
+      bFunctionSubClass       0
+      bFunctionProtocol      32
+      iFunction               4 Scarlett 2i2 USB
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        0
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      1 Control Device
+      bInterfaceProtocol     32
+      iInterface              4 Scarlett 2i2 USB
+      AudioControl Interface Descriptor:
+        bLength                 9
+        bDescriptorType        36
+        bDescriptorSubtype      1 (HEADER)
+        bcdADC               2.00
+        bCategory               8
+        wTotalLength       0x0087
+        bmControls           0x00
+      AudioControl Interface Descriptor:
+        bLength                 8
+        bDescriptorType        36
+        bDescriptorSubtype     10 (CLOCK_SOURCE)
+        bClockID               41
+        bmAttributes         0x03 Internal Programmable Clock
+        bmControls           0x07
+          Clock Frequency Control (read/write)
+          Clock Validity Control (read-only)
+        bAssocTerminal          0
+        iClockSource            5 Internal Clock
+      AudioControl Interface Descriptor:
+        bLength                17
+        bDescriptorType        36
+        bDescriptorSubtype      2 (INPUT_TERMINAL)
+        bTerminalID             1
+        wTerminalType      0x0101 USB Streaming
+        bAssocTerminal          0
+        bCSourceID             41
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           0
+        bmControls         0x0000
+        iTerminal               6 USB Playback
+      AudioControl Interface Descriptor:
+        bLength                17
+        bDescriptorType        36
+        bDescriptorSubtype      2 (INPUT_TERMINAL)
+        bTerminalID             2
+        wTerminalType      0x0201 Microphone
+        bAssocTerminal          0
+        bCSourceID             41
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           7 Analogue 1
+        bmControls         0x0000
+        iTerminal               8 Analogue Inputs
+      AudioControl Interface Descriptor:
+        bLength                12
+        bDescriptorType        36
+        bDescriptorSubtype      3 (OUTPUT_TERMINAL)
+        bTerminalID            20
+        wTerminalType      0x0301 Speaker
+        bAssocTerminal          0
+        bSourceID              10
+        bCSourceID             41
+        bmControls         0x0000
+        iTerminal               9 Playback Outputs
+      AudioControl Interface Descriptor:
+        bLength                12
+        bDescriptorType        36
+        bDescriptorSubtype      3 (OUTPUT_TERMINAL)
+        bTerminalID            21
+        wTerminalType      0x0101 USB Streaming
+        bAssocTerminal          0
+        bSourceID              11
+        bCSourceID             41
+        bmControls         0x0000
+        iTerminal              10 USB Capture
+      AudioControl Interface Descriptor:
+        bLength                18
+        bDescriptorType        36
+        bDescriptorSubtype      6 (FEATURE_UNIT)
+        bUnitID                10
+        bSourceID               1
+        bmaControls(0)     0x0000000f
+          Mute Control (read/write)
+          Volume Control (read/write)
+        bmaControls(1)     0x00000000
+        bmaControls(2)     0x00000000
+        iFeature               11 Playback Volume
+      AudioControl Interface Descriptor:
+        bLength                18
+        bDescriptorType        36
+        bDescriptorSubtype      6 (FEATURE_UNIT)
+        bUnitID                11
+        bSourceID               2
+        bmaControls(0)     0x0000000f
+          Mute Control (read/write)
+          Volume Control (read/write)
+        bmaControls(1)     0x00000000
+        bmaControls(2)     0x00000000
+        iFeature               12 Capture Volume
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32
+      iInterface             13 Playback
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        1
+      bAlternateSetting       1
+      bNumEndpoints           2
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32
+      iInterface             13 Playback
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink           1
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           0
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            4
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x01  EP 1 OUT
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0188  1x 392 bytes
+        bInterval               1
+        AudioControl Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         2 Decoded PCM samples
+          wLockDelay              8
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x81  EP 1 IN
+        bmAttributes           17
+          Transfer Type            Isochronous
+          Synch Type               None
+          Usage Type               Feedback
+        wMaxPacketSize     0x0004  1x 4 bytes
+        bInterval               4
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       0
+      bNumEndpoints           0
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32
+      iInterface             14 Capture
+    Interface Descriptor:
+      bLength                 9
+      bDescriptorType         4
+      bInterfaceNumber        2
+      bAlternateSetting       1
+      bNumEndpoints           1
+      bInterfaceClass         1 Audio
+      bInterfaceSubClass      2 Streaming
+      bInterfaceProtocol     32
+      iInterface             14 Capture
+      AudioStreaming Interface Descriptor:
+        bLength                16
+        bDescriptorType        36
+        bDescriptorSubtype      1 (AS_GENERAL)
+        bTerminalLink          21
+        bmControls           0x00
+        bFormatType             1
+        bmFormats          0x00000001
+          PCM
+        bNrChannels             2
+        bmChannelConfig    0x00000003
+          Front Left (FL)
+          Front Right (FR)
+        iChannelNames           0
+      AudioStreaming Interface Descriptor:
+        bLength                 6
+        bDescriptorType        36
+        bDescriptorSubtype      2 (FORMAT_TYPE)
+        bFormatType             1 (FORMAT_TYPE_I)
+        bSubslotSize            4
+        bBitResolution         24
+      Endpoint Descriptor:
+        bLength                 7
+        bDescriptorType         5
+        bEndpointAddress     0x82  EP 2 IN
+        bmAttributes            5
+          Transfer Type            Isochronous
+          Synch Type               Asynchronous
+          Usage Type               Data
+        wMaxPacketSize     0x0188  1x 392 bytes
+        bInterval               1
+        AudioControl Endpoint Descriptor:
+          bLength                 8
+          bDescriptorType        37
+          bDescriptorSubtype      1 (EP_GENERAL)
+          bmAttributes         0x00
+          bmControls           0x00
+          bLockDelayUnits         2 Decoded PCM samples
+          wLockDelay              8
