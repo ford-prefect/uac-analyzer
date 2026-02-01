@@ -488,11 +488,23 @@ class LsusbParser:
         start_indent = self._current().indent
         self._advance()
 
-        # If this is a subsequent configuration, reset the audio data to avoid duplicates
-        # (Many devices report multiple identical configurations)
+        # For multi-config devices, prefer keeping the first valid UAC 2.0/3.0 config
+        # Only reset if we don't have valid audio control data yet
         if device.configuration is not None:
+            has_valid_audio = (
+                device.audio_control is not None
+                and device.audio_control.header is not None
+                and device.audio_control.header.uac_version in (UACVersion.UAC_2_0, UACVersion.UAC_3_0)
+            )
+            if has_valid_audio:
+                # Skip parsing this configuration, keep existing audio data
+                while self._current() and self._current().indent > start_indent:
+                    self._advance()
+                return device.configuration
+            # Reset for this new configuration attempt
             device.audio_control = None
             device.streaming_interfaces = []
+            self._uac_version = UACVersion.UNKNOWN
 
         while self._current() and self._current().indent > start_indent:
             line = self._current()
