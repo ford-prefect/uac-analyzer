@@ -117,15 +117,31 @@ class LsusbParser:
     def _parse_hex_value(self, text: str) -> int:
         """Parse a hex value from text like '0x1234' or just '1234'."""
         text = text.strip()
+        # First try explicit 0x prefix
         match = re.search(r'0x([0-9a-fA-F]+)', text)
         if match:
             return int(match.group(1), 16)
-        match = re.search(r'\b([0-9a-fA-F]+)\b', text)
+        # Try to find value after field name (after whitespace)
+        # Look for pattern: fieldName  value
+        parts = text.split()
+        if len(parts) >= 2:
+            value_part = parts[1]
+            # Check if it looks like a hex number (all hex digits)
+            if re.match(r'^[0-9a-fA-F]+$', value_part):
+                try:
+                    return int(value_part, 16)
+                except ValueError:
+                    pass
+        return 0
+
+    def _parse_bcd_value(self, text: str) -> int:
+        """Parse a BCD version value like '1.00' or '2.00' to 0x0100 or 0x0200."""
+        # Match patterns like "1.00", "2.00", "1.10"
+        match = re.search(r'(\d+)\.(\d+)', text)
         if match:
-            try:
-                return int(match.group(1), 16)
-            except ValueError:
-                pass
+            major = int(match.group(1))
+            minor = int(match.group(2))
+            return (major << 8) | minor
         return 0
 
     def _parse_int_value(self, text: str) -> int:
@@ -223,6 +239,9 @@ class LsusbParser:
                     desc.serial_number = match.group(1).strip()
             elif content.startswith("bNumConfigurations"):
                 desc.num_configurations = self._parse_int_value(content)
+            elif content.startswith("Configuration Descriptor:"):
+                # Configuration is nested in lsusb output but should be parsed separately
+                break
 
             self._advance()
 
@@ -240,16 +259,21 @@ class LsusbParser:
 
             if content.startswith("bConfigurationValue"):
                 config.config_value = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bNumInterfaces"):
                 config.num_interfaces = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("iConfiguration"):
                 match = re.search(r'iConfiguration\s+\d+\s+(.+)', content)
                 if match:
                     config.config_name = match.group(1).strip()
+                self._advance()
             elif content.startswith("bmAttributes"):
                 config.attributes = self._parse_hex_value(content)
+                self._advance()
             elif content.startswith("MaxPower"):
                 config.max_power_ma = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("Interface Descriptor:"):
                 iface = self._parse_interface_descriptor(device)
                 config.interfaces.append(iface)
@@ -270,20 +294,27 @@ class LsusbParser:
 
             if content.startswith("bInterfaceNumber"):
                 iface.interface_number = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bAlternateSetting"):
                 iface.alternate_setting = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bNumEndpoints"):
                 iface.num_endpoints = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bInterfaceClass"):
                 iface.interface_class = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bInterfaceSubClass"):
                 iface.interface_subclass = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bInterfaceProtocol"):
                 iface.interface_protocol = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("iInterface"):
                 match = re.search(r'iInterface\s+\d+\s+(.+)', content)
                 if match:
                     iface.interface_name = match.group(1).strip()
+                self._advance()
             elif content.startswith("Endpoint Descriptor:"):
                 ep = self._parse_endpoint_descriptor()
                 iface.endpoints.append(ep)
@@ -309,6 +340,7 @@ class LsusbParser:
             if content.startswith("bEndpointAddress"):
                 ep.address = self._parse_hex_value(content)
                 ep.direction = "IN" if (ep.address & 0x80) else "OUT"
+                self._advance()
             elif content.startswith("bmAttributes"):
                 attrs = self._parse_int_value(content)
                 # Transfer type (bits 0-1)
@@ -323,17 +355,22 @@ class LsusbParser:
                     # Usage type (bits 4-5)
                     usage_types = [UsageType.DATA, UsageType.FEEDBACK, UsageType.IMPLICIT_FEEDBACK, UsageType.DATA]
                     ep.usage_type = usage_types[(attrs >> 4) & 0x03]
+                self._advance()
             elif content.startswith("wMaxPacketSize"):
                 # Format may include transactions: "0x0200  1x 512 bytes"
                 match = re.search(r'0x([0-9a-fA-F]+)', content)
                 if match:
                     ep.max_packet_size = int(match.group(1), 16) & 0x7FF  # Lower 11 bits
+                self._advance()
             elif content.startswith("bInterval"):
                 ep.interval = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bRefresh"):
                 ep.refresh = self._parse_int_value(content)
+                self._advance()
             elif content.startswith("bSynchAddress"):
                 ep.synch_address = self._parse_hex_value(content)
+                self._advance()
             elif content.startswith("AudioControl Endpoint Descriptor:"):
                 # Parse audio-specific endpoint extensions
                 self._parse_audio_endpoint_descriptor(ep)
@@ -418,7 +455,7 @@ class LsusbParser:
             content = line.content
 
             if content.startswith("bcdADC"):
-                header.bcd_adc = self._parse_hex_value(content)
+                header.bcd_adc = self._parse_bcd_value(content)
                 # Determine UAC version from bcdADC
                 if header.bcd_adc >= 0x0200:
                     header.uac_version = UACVersion.UAC_2_0
@@ -429,9 +466,11 @@ class LsusbParser:
             elif content.startswith("bInCollection"):
                 header.in_collection = self._parse_int_value(content)
             elif content.startswith("baInterfaceNr"):
-                # UAC 1.0 interface numbers
-                iface_nr = self._parse_int_value(content)
-                header.interface_numbers.append(iface_nr)
+                # UAC 1.0 interface numbers - format: baInterfaceNr(0)  1
+                match = re.search(r'baInterfaceNr\(\d+\)\s+(\d+)', content)
+                if match:
+                    iface_nr = int(match.group(1))
+                    header.interface_numbers.append(iface_nr)
             elif content.startswith("bCategory"):
                 header.category = self._parse_hex_value(content)
             elif content.startswith("bmControls"):
@@ -781,8 +820,8 @@ class LsusbParser:
                 # UAC 2.0 format type in AS general
                 pass
             elif content.startswith("bNrChannels"):
-                # Will be handled in format descriptor
-                pass
+                # UAC 2.0: channel count is in AS General, store temporarily
+                streaming._nr_channels = self._parse_int_value(content)
             elif content.startswith("bClockSourceID"):
                 streaming.clock_source_id = self._parse_int_value(content)
 
@@ -825,7 +864,11 @@ class LsusbParser:
 
         # Attach format to most recent streaming interface
         if device.streaming_interfaces:
-            device.streaming_interfaces[-1].format = fmt
+            streaming = device.streaming_interfaces[-1]
+            streaming.format = fmt
+            # UAC 2.0: copy channel count from AS General to format if not set
+            if fmt.nr_channels == 0 and hasattr(streaming, '_nr_channels'):
+                fmt.nr_channels = streaming._nr_channels
 
     def _build_alternate_settings(self, device: USBAudioDevice) -> list[AlternateSetting]:
         """Build alternate settings from parsed streaming interfaces."""
