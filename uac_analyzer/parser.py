@@ -6,8 +6,188 @@ Class data model.
 """
 
 import re
-from typing import Optional, TextIO, Iterator
+from enum import Enum
+from typing import Optional, TextIO, Iterator, Any
 from io import StringIO
+
+
+class FieldType(Enum):
+    """Field extraction types for declarative parsing."""
+    INT = "int"           # bLength  18
+    HEX = "hex"           # idVendor  0x05ac
+    BCD = "bcd"           # bcdUSB  2.00
+    STRING = "string"     # iProduct  3 Product Name (extract after index)
+    HEX_STRING = "hex_string"  # wTerminalType  0x0101 USB Streaming
+
+
+# ============================================================================
+# Declarative Field Mappings
+# ============================================================================
+
+# Input Terminal (UAC 1.0 and 2.0)
+INPUT_TERMINAL_FIELDS = {
+    'bTerminalID': ('terminal_id', FieldType.INT),
+    'wTerminalType': ('terminal_type', FieldType.HEX),
+    'bAssocTerminal': ('assoc_terminal', FieldType.INT),
+    'bNrChannels': ('nr_channels', FieldType.INT),
+    'wChannelConfig': ('channel_config', FieldType.HEX),
+    'iChannelNames': ('channel_names', FieldType.STRING),
+    'iTerminal': ('terminal_name', FieldType.STRING),
+    'bCSourceID': ('clock_source_id', FieldType.INT),
+    'bmControls': ('controls', FieldType.HEX),
+}
+
+# Output Terminal (UAC 1.0 and 2.0)
+OUTPUT_TERMINAL_FIELDS = {
+    'bTerminalID': ('terminal_id', FieldType.INT),
+    'wTerminalType': ('terminal_type', FieldType.HEX),
+    'bAssocTerminal': ('assoc_terminal', FieldType.INT),
+    'bSourceID': ('source_id', FieldType.INT),
+    'iTerminal': ('terminal_name', FieldType.STRING),
+    'bCSourceID': ('clock_source_id', FieldType.INT),
+    'bmControls': ('controls', FieldType.HEX),
+}
+
+# Feature Unit
+FEATURE_UNIT_FIELDS = {
+    'bUnitID': ('unit_id', FieldType.INT),
+    'bSourceID': ('source_id', FieldType.INT),
+    'iFeature': ('unit_name', FieldType.STRING),
+}
+
+# Mixer Unit
+MIXER_UNIT_FIELDS = {
+    'bUnitID': ('unit_id', FieldType.INT),
+    'bNrInPins': ('nr_in_pins', FieldType.INT),
+    'bNrChannels': ('nr_channels', FieldType.INT),
+    'wChannelConfig': ('channel_config', FieldType.HEX),
+    'iChannelNames': ('channel_names', FieldType.STRING),
+    'iMixer': ('unit_name', FieldType.STRING),
+}
+
+# Selector Unit
+SELECTOR_UNIT_FIELDS = {
+    'bUnitID': ('unit_id', FieldType.INT),
+    'bNrInPins': ('nr_in_pins', FieldType.INT),
+    'iSelector': ('selector_name', FieldType.STRING),
+}
+
+# Processing Unit
+PROCESSING_UNIT_FIELDS = {
+    'bUnitID': ('unit_id', FieldType.INT),
+    'wProcessType': ('process_type', FieldType.HEX),
+    'bNrInPins': ('nr_in_pins', FieldType.INT),
+    'bNrChannels': ('nr_channels', FieldType.INT),
+    'wChannelConfig': ('channel_config', FieldType.HEX),
+    'iChannelNames': ('channel_names', FieldType.STRING),
+    'bmControls': ('controls', FieldType.HEX),
+    'iProcessing': ('unit_name', FieldType.STRING),
+}
+
+# Extension Unit
+EXTENSION_UNIT_FIELDS = {
+    'bUnitID': ('unit_id', FieldType.INT),
+    'wExtensionCode': ('extension_code', FieldType.HEX),
+    'bNrInPins': ('nr_in_pins', FieldType.INT),
+    'bNrChannels': ('nr_channels', FieldType.INT),
+    'wChannelConfig': ('channel_config', FieldType.HEX),
+    'iChannelNames': ('channel_names', FieldType.STRING),
+    'bmControls': ('controls', FieldType.HEX),
+    'iExtension': ('unit_name', FieldType.STRING),
+}
+
+# Clock Source (UAC 2.0)
+CLOCK_SOURCE_FIELDS = {
+    'bClockID': ('clock_id', FieldType.INT),
+    'bmAttributes': ('attributes', FieldType.HEX),
+    'bmControls': ('controls', FieldType.HEX),
+    'bAssocTerminal': ('assoc_terminal', FieldType.INT),
+    'iClockSource': ('clock_source_name', FieldType.STRING),
+}
+
+# Clock Selector (UAC 2.0)
+CLOCK_SELECTOR_FIELDS = {
+    'bClockID': ('clock_id', FieldType.INT),
+    'bNrInPins': ('nr_in_pins', FieldType.INT),
+    'bmControls': ('controls', FieldType.HEX),
+    'iClockSelector': ('clock_selector_name', FieldType.STRING),
+}
+
+# Clock Multiplier (UAC 2.0)
+CLOCK_MULTIPLIER_FIELDS = {
+    'bClockID': ('clock_id', FieldType.INT),
+    'bCSourceID': ('clock_source_id', FieldType.INT),
+    'bmControls': ('controls', FieldType.HEX),
+    'iClockMultiplier': ('clock_multiplier_name', FieldType.STRING),
+}
+
+# AudioControl Header
+AC_HEADER_FIELDS = {
+    'bcdADC': ('bcd_adc', FieldType.BCD),
+    'wTotalLength': ('total_length', FieldType.INT),
+    'bInCollection': ('in_collection', FieldType.INT),
+    'bCategory': ('category', FieldType.HEX),
+    'bmControls': ('controls', FieldType.HEX),
+}
+
+# AudioStreaming General
+AS_GENERAL_FIELDS = {
+    'bTerminalLink': ('terminal_link', FieldType.INT),
+    'bDelay': ('delay', FieldType.INT),
+    'wFormatTag': ('format_tag', FieldType.HEX),
+    'bmFormats': ('bm_formats', FieldType.HEX),
+    'bmControls': ('controls', FieldType.HEX),
+    'bClockSourceID': ('clock_source_id', FieldType.INT),
+}
+
+# Format Type Descriptor
+FORMAT_TYPE_FIELDS = {
+    'bFormatType': ('format_type', FieldType.INT),
+    'bNrChannels': ('nr_channels', FieldType.INT),
+    'bSubframeSize': ('subframe_size', FieldType.INT),
+    'bBitResolution': ('bit_resolution', FieldType.INT),
+    'bSubslotSize': ('subframe_size', FieldType.INT),  # UAC 2.0 name
+    'tLowerSamFreq': ('freq_min', FieldType.INT),
+    'tUpperSamFreq': ('freq_max', FieldType.INT),
+}
+
+# Device Descriptor
+DEVICE_DESCRIPTOR_FIELDS = {
+    'bDeviceClass': ('device_class', FieldType.INT),
+    'bDeviceSubClass': ('device_subclass', FieldType.INT),
+    'bDeviceProtocol': ('device_protocol', FieldType.INT),
+    'bMaxPacketSize0': ('max_packet_size_0', FieldType.INT),
+    'bNumConfigurations': ('num_configurations', FieldType.INT),
+}
+
+# Configuration Descriptor
+CONFIGURATION_DESCRIPTOR_FIELDS = {
+    'bConfigurationValue': ('config_value', FieldType.INT),
+    'bNumInterfaces': ('num_interfaces', FieldType.INT),
+    'bmAttributes': ('attributes', FieldType.HEX),
+}
+
+# Interface Descriptor
+INTERFACE_DESCRIPTOR_FIELDS = {
+    'bInterfaceNumber': ('interface_number', FieldType.INT),
+    'bAlternateSetting': ('alternate_setting', FieldType.INT),
+    'bNumEndpoints': ('num_endpoints', FieldType.INT),
+    'bInterfaceClass': ('interface_class', FieldType.INT),
+    'bInterfaceSubClass': ('interface_subclass', FieldType.INT),
+    'bInterfaceProtocol': ('interface_protocol', FieldType.INT),
+}
+
+# Endpoint Descriptor
+ENDPOINT_DESCRIPTOR_FIELDS = {
+    'bInterval': ('interval', FieldType.INT),
+    'bRefresh': ('refresh', FieldType.INT),
+}
+
+# Audio Endpoint Descriptor
+AUDIO_ENDPOINT_FIELDS = {
+    'bLockDelayUnits': ('lock_delay_units', FieldType.INT),
+    'wLockDelay': ('lock_delay', FieldType.INT),
+}
 
 from .model import (
     UACVersion,
@@ -167,6 +347,47 @@ class LsusbParser:
             block.append(self._current())
             self._advance()
         return block
+
+    def _extract_value(self, content: str, field_type: FieldType) -> Any:
+        """Extract a value from line content based on field type."""
+        if field_type == FieldType.INT:
+            return self._parse_int_value(content)
+        elif field_type == FieldType.HEX:
+            return self._parse_hex_value(content)
+        elif field_type == FieldType.BCD:
+            return self._parse_bcd_value(content)
+        elif field_type == FieldType.STRING:
+            # Format: "iFieldName  N  String Value" - extract text after the index
+            match = re.search(r'\w+\s+\d+\s+(.+)', content)
+            if match:
+                return match.group(1).strip()
+            return ""
+        elif field_type == FieldType.HEX_STRING:
+            # Format: "wFieldName  0x1234  Description" - return hex value
+            return self._parse_hex_value(content)
+        return None
+
+    def _parse_descriptor_fields(self, obj: Any, field_map: dict, start_indent: int) -> None:
+        """
+        Generic descriptor field parser using declarative field mappings.
+
+        Args:
+            obj: The object to populate with parsed values
+            field_map: Dictionary mapping field prefixes to (attr_name, field_type) tuples
+            start_indent: The indentation level of the descriptor header
+
+        Returns when the current line's indent is <= start_indent (block ended).
+        """
+        while self._current() and self._current().indent > start_indent:
+            content = self._current().content
+
+            for prefix, (attr, field_type) in field_map.items():
+                if content.startswith(prefix):
+                    value = self._extract_value(content, field_type)
+                    setattr(obj, attr, value)
+                    break
+
+            self._advance()
 
     def parse(self) -> USBAudioDevice:
         """Parse the lsusb output and return a USBAudioDevice."""
@@ -489,65 +710,13 @@ class LsusbParser:
     def _parse_input_terminal(self, ac: AudioControlInterface, start_indent: int) -> None:
         """Parse Input Terminal descriptor."""
         terminal = InputTerminal()
-
-        while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
-
-            if content.startswith("bTerminalID"):
-                terminal.terminal_id = self._parse_int_value(content)
-            elif content.startswith("wTerminalType"):
-                terminal.terminal_type = self._parse_hex_value(content)
-            elif content.startswith("bAssocTerminal"):
-                terminal.assoc_terminal = self._parse_int_value(content)
-            elif content.startswith("bNrChannels"):
-                terminal.nr_channels = self._parse_int_value(content)
-            elif content.startswith("wChannelConfig"):
-                terminal.channel_config = self._parse_hex_value(content)
-            elif content.startswith("iChannelNames"):
-                match = re.search(r'iChannelNames\s+\d+\s+(.+)', content)
-                if match:
-                    terminal.channel_names = match.group(1).strip()
-            elif content.startswith("iTerminal"):
-                match = re.search(r'iTerminal\s+\d+\s+(.+)', content)
-                if match:
-                    terminal.terminal_name = match.group(1).strip()
-            elif content.startswith("bCSourceID"):
-                terminal.clock_source_id = self._parse_int_value(content)
-            elif content.startswith("bmControls"):
-                terminal.controls = self._parse_hex_value(content)
-
-            self._advance()
-
+        self._parse_descriptor_fields(terminal, INPUT_TERMINAL_FIELDS, start_indent)
         ac.input_terminals.append(terminal)
 
     def _parse_output_terminal(self, ac: AudioControlInterface, start_indent: int) -> None:
         """Parse Output Terminal descriptor."""
         terminal = OutputTerminal()
-
-        while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
-
-            if content.startswith("bTerminalID"):
-                terminal.terminal_id = self._parse_int_value(content)
-            elif content.startswith("wTerminalType"):
-                terminal.terminal_type = self._parse_hex_value(content)
-            elif content.startswith("bAssocTerminal"):
-                terminal.assoc_terminal = self._parse_int_value(content)
-            elif content.startswith("bSourceID"):
-                terminal.source_id = self._parse_int_value(content)
-            elif content.startswith("iTerminal"):
-                match = re.search(r'iTerminal\s+\d+\s+(.+)', content)
-                if match:
-                    terminal.terminal_name = match.group(1).strip()
-            elif content.startswith("bCSourceID"):
-                terminal.clock_source_id = self._parse_int_value(content)
-            elif content.startswith("bmControls"):
-                terminal.controls = self._parse_hex_value(content)
-
-            self._advance()
-
+        self._parse_descriptor_fields(terminal, OUTPUT_TERMINAL_FIELDS, start_indent)
         ac.output_terminals.append(terminal)
 
     def _parse_feature_unit(self, ac: AudioControlInterface, start_indent: int) -> None:
@@ -555,26 +724,20 @@ class LsusbParser:
         unit = FeatureUnit()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bUnitID"):
-                unit.unit_id = self._parse_int_value(content)
-            elif content.startswith("bSourceID"):
-                unit.source_id = self._parse_int_value(content)
-            elif content.startswith("bControlSize"):
-                # UAC 1.0 control size
-                pass
-            elif re.match(r'bmaControls\(\s*\d+\)', content):
-                # Format: bmaControls( 0)  0x03
+            # Handle indexed array field
+            if re.match(r'bmaControls\(\s*\d+\)', content):
                 ctrl = self._parse_hex_value(content)
                 unit.controls.append(ctrl)
-            elif content.startswith("iFeature"):
-                match = re.search(r'iFeature\s+\d+\s+(.+)', content)
-                if match:
-                    unit.unit_name = match.group(1).strip()
-
-            self._advance()
+                self._advance()
+            else:
+                # Handle regular fields declaratively
+                for prefix, (attr, field_type) in FEATURE_UNIT_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(unit, attr, self._extract_value(content, field_type))
+                        break
+                self._advance()
 
         ac.feature_units.append(unit)
 
@@ -583,29 +746,16 @@ class LsusbParser:
         unit = MixerUnit()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bUnitID"):
-                unit.unit_id = self._parse_int_value(content)
-            elif content.startswith("bNrInPins"):
-                unit.nr_in_pins = self._parse_int_value(content)
-            elif re.match(r'baSourceID\(\s*\d+\)', content):
+            if re.match(r'baSourceID\(\s*\d+\)', content):
                 src_id = self._parse_int_value(content.split(')')[-1])
                 unit.source_ids.append(src_id)
-            elif content.startswith("bNrChannels"):
-                unit.nr_channels = self._parse_int_value(content)
-            elif content.startswith("wChannelConfig"):
-                unit.channel_config = self._parse_hex_value(content)
-            elif content.startswith("iChannelNames"):
-                match = re.search(r'iChannelNames\s+\d+\s+(.+)', content)
-                if match:
-                    unit.channel_names = match.group(1).strip()
-            elif content.startswith("iMixer"):
-                match = re.search(r'iMixer\s+\d+\s+(.+)', content)
-                if match:
-                    unit.unit_name = match.group(1).strip()
-
+            else:
+                for prefix, (attr, field_type) in MIXER_UNIT_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(unit, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         ac.mixer_units.append(unit)
@@ -615,21 +765,16 @@ class LsusbParser:
         unit = SelectorUnit()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bUnitID"):
-                unit.unit_id = self._parse_int_value(content)
-            elif content.startswith("bNrInPins"):
-                unit.nr_in_pins = self._parse_int_value(content)
-            elif re.match(r'baSourceID\(\s*\d+\)', content):
+            if re.match(r'baSourceID\(\s*\d+\)', content):
                 src_id = self._parse_int_value(content.split(')')[-1])
                 unit.source_ids.append(src_id)
-            elif content.startswith("iSelector"):
-                match = re.search(r'iSelector\s+\d+\s+(.+)', content)
-                if match:
-                    unit.selector_name = match.group(1).strip()
-
+            else:
+                for prefix, (attr, field_type) in SELECTOR_UNIT_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(unit, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         ac.selector_units.append(unit)
@@ -639,33 +784,16 @@ class LsusbParser:
         unit = ProcessingUnit()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bUnitID"):
-                unit.unit_id = self._parse_int_value(content)
-            elif content.startswith("wProcessType"):
-                unit.process_type = self._parse_hex_value(content)
-            elif content.startswith("bNrInPins"):
-                unit.nr_in_pins = self._parse_int_value(content)
-            elif re.match(r'baSourceID\(\s*\d+\)', content):
+            if re.match(r'baSourceID\(\s*\d+\)', content):
                 src_id = self._parse_int_value(content.split(')')[-1])
                 unit.source_ids.append(src_id)
-            elif content.startswith("bNrChannels"):
-                unit.nr_channels = self._parse_int_value(content)
-            elif content.startswith("wChannelConfig"):
-                unit.channel_config = self._parse_hex_value(content)
-            elif content.startswith("iChannelNames"):
-                match = re.search(r'iChannelNames\s+\d+\s+(.+)', content)
-                if match:
-                    unit.channel_names = match.group(1).strip()
-            elif content.startswith("bmControls"):
-                unit.controls = self._parse_hex_value(content)
-            elif content.startswith("iProcessing"):
-                match = re.search(r'iProcessing\s+\d+\s+(.+)', content)
-                if match:
-                    unit.unit_name = match.group(1).strip()
-
+            else:
+                for prefix, (attr, field_type) in PROCESSING_UNIT_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(unit, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         ac.processing_units.append(unit)
@@ -675,33 +803,16 @@ class LsusbParser:
         unit = ExtensionUnit()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bUnitID"):
-                unit.unit_id = self._parse_int_value(content)
-            elif content.startswith("wExtensionCode"):
-                unit.extension_code = self._parse_hex_value(content)
-            elif content.startswith("bNrInPins"):
-                unit.nr_in_pins = self._parse_int_value(content)
-            elif re.match(r'baSourceID\(\s*\d+\)', content):
+            if re.match(r'baSourceID\(\s*\d+\)', content):
                 src_id = self._parse_int_value(content.split(')')[-1])
                 unit.source_ids.append(src_id)
-            elif content.startswith("bNrChannels"):
-                unit.nr_channels = self._parse_int_value(content)
-            elif content.startswith("wChannelConfig"):
-                unit.channel_config = self._parse_hex_value(content)
-            elif content.startswith("iChannelNames"):
-                match = re.search(r'iChannelNames\s+\d+\s+(.+)', content)
-                if match:
-                    unit.channel_names = match.group(1).strip()
-            elif content.startswith("bmControls"):
-                unit.controls = self._parse_hex_value(content)
-            elif content.startswith("iExtension"):
-                match = re.search(r'iExtension\s+\d+\s+(.+)', content)
-                if match:
-                    unit.unit_name = match.group(1).strip()
-
+            else:
+                for prefix, (attr, field_type) in EXTENSION_UNIT_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(unit, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         ac.extension_units.append(unit)
@@ -709,26 +820,7 @@ class LsusbParser:
     def _parse_clock_source(self, ac: AudioControlInterface, start_indent: int) -> None:
         """Parse Clock Source descriptor (UAC 2.0)."""
         clock = ClockSource()
-
-        while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
-
-            if content.startswith("bClockID"):
-                clock.clock_id = self._parse_int_value(content)
-            elif content.startswith("bmAttributes"):
-                clock.attributes = self._parse_hex_value(content)
-            elif content.startswith("bmControls"):
-                clock.controls = self._parse_hex_value(content)
-            elif content.startswith("bAssocTerminal"):
-                clock.assoc_terminal = self._parse_int_value(content)
-            elif content.startswith("iClockSource"):
-                match = re.search(r'iClockSource\s+\d+\s+(.+)', content)
-                if match:
-                    clock.clock_source_name = match.group(1).strip()
-
-            self._advance()
-
+        self._parse_descriptor_fields(clock, CLOCK_SOURCE_FIELDS, start_indent)
         ac.clock_sources.append(clock)
 
     def _parse_clock_selector(self, ac: AudioControlInterface, start_indent: int) -> None:
@@ -736,23 +828,16 @@ class LsusbParser:
         clock = ClockSelector()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bClockID"):
-                clock.clock_id = self._parse_int_value(content)
-            elif content.startswith("bNrInPins"):
-                clock.nr_in_pins = self._parse_int_value(content)
-            elif re.match(r'baCSourceID\(\s*\d+\)', content):
+            if re.match(r'baCSourceID\(\s*\d+\)', content):
                 src_id = self._parse_int_value(content.split(')')[-1])
                 clock.clock_pin_ids.append(src_id)
-            elif content.startswith("bmControls"):
-                clock.controls = self._parse_hex_value(content)
-            elif content.startswith("iClockSelector"):
-                match = re.search(r'iClockSelector\s+\d+\s+(.+)', content)
-                if match:
-                    clock.clock_selector_name = match.group(1).strip()
-
+            else:
+                for prefix, (attr, field_type) in CLOCK_SELECTOR_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(clock, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         ac.clock_selectors.append(clock)
@@ -760,24 +845,7 @@ class LsusbParser:
     def _parse_clock_multiplier(self, ac: AudioControlInterface, start_indent: int) -> None:
         """Parse Clock Multiplier descriptor (UAC 2.0)."""
         clock = ClockMultiplier()
-
-        while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
-
-            if content.startswith("bClockID"):
-                clock.clock_id = self._parse_int_value(content)
-            elif content.startswith("bCSourceID"):
-                clock.clock_source_id = self._parse_int_value(content)
-            elif content.startswith("bmControls"):
-                clock.controls = self._parse_hex_value(content)
-            elif content.startswith("iClockMultiplier"):
-                match = re.search(r'iClockMultiplier\s+\d+\s+(.+)', content)
-                if match:
-                    clock.clock_multiplier_name = match.group(1).strip()
-
-            self._advance()
-
+        self._parse_descriptor_fields(clock, CLOCK_MULTIPLIER_FIELDS, start_indent)
         ac.clock_multipliers.append(clock)
 
     def _parse_audio_streaming_descriptor(self, device: USBAudioDevice, iface: InterfaceDescriptor) -> None:
@@ -811,29 +879,16 @@ class LsusbParser:
         streaming.alternate_setting = iface.alternate_setting
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bTerminalLink"):
-                streaming.terminal_link = self._parse_int_value(content)
-            elif content.startswith("bDelay"):
-                streaming.delay = self._parse_int_value(content)
-            elif content.startswith("wFormatTag"):
-                streaming.format_tag = self._parse_hex_value(content)
-            elif content.startswith("bmFormats"):
-                # UAC 2.0 format bitmask
-                streaming.bm_formats = self._parse_hex_value(content)
-            elif content.startswith("bmControls"):
-                streaming.controls = self._parse_hex_value(content)
-            elif content.startswith("bFormatType"):
-                # UAC 2.0 format type in AS general
-                pass
-            elif content.startswith("bNrChannels"):
-                # UAC 2.0: channel count is in AS General, store temporarily
+            # Handle UAC 2.0 channel count specially (stored temporarily)
+            if content.startswith("bNrChannels"):
                 streaming._nr_channels = self._parse_int_value(content)
-            elif content.startswith("bClockSourceID"):
-                streaming.clock_source_id = self._parse_int_value(content)
-
+            else:
+                for prefix, (attr, field_type) in AS_GENERAL_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(streaming, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         device.streaming_interfaces.append(streaming)
@@ -843,32 +898,16 @@ class LsusbParser:
         fmt = FormatTypeDescriptor()
 
         while self._current() and self._current().indent > start_indent:
-            line = self._current()
-            content = line.content
+            content = self._current().content
 
-            if content.startswith("bFormatType"):
-                fmt.format_type = self._parse_int_value(content)
-            elif content.startswith("bNrChannels"):
-                fmt.nr_channels = self._parse_int_value(content)
-            elif content.startswith("bSubframeSize"):
-                fmt.subframe_size = self._parse_int_value(content)
-            elif content.startswith("bBitResolution"):
-                fmt.bit_resolution = self._parse_int_value(content)
-            elif content.startswith("bSubslotSize"):
-                # UAC 2.0 uses this instead of bSubframeSize
-                fmt.subframe_size = self._parse_int_value(content)
-            elif content.startswith("bSamFreqType"):
-                # Number of discrete sample frequencies (UAC 1.0)
-                pass
-            elif re.match(r'tSamFreq\[\s*\d+\]', content):
-                # Discrete sample frequencies
+            if re.match(r'tSamFreq\[\s*\d+\]', content):
                 freq = self._parse_int_value(content.split(']')[-1])
                 fmt.sample_frequencies.append(freq)
-            elif content.startswith("tLowerSamFreq"):
-                fmt.freq_min = self._parse_int_value(content)
-            elif content.startswith("tUpperSamFreq"):
-                fmt.freq_max = self._parse_int_value(content)
-
+            else:
+                for prefix, (attr, field_type) in FORMAT_TYPE_FIELDS.items():
+                    if content.startswith(prefix):
+                        setattr(fmt, attr, self._extract_value(content, field_type))
+                        break
             self._advance()
 
         # Attach format to most recent streaming interface
