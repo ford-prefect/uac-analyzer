@@ -934,18 +934,38 @@ class LsusbParser:
         streaming.interface_number = iface.interface_number
         streaming.alternate_setting = iface.alternate_setting
 
+        # UAC 3.0 inline format fields
+        subslot_size = 0
+        bit_resolution = 0
+
         while self._current() and self._current().indent > start_indent:
             content = self._current().content
 
-            # Handle UAC 2.0 channel count specially (stored temporarily)
+            # Handle UAC 2.0/3.0 channel count specially (stored temporarily)
             if content.startswith("bNrChannels"):
                 streaming._nr_channels = self._parse_int_value(content)
+            # UAC 3.0 inline format info
+            elif content.startswith("bSubslotSize"):
+                subslot_size = self._parse_int_value(content)
+            elif content.startswith("bBitResolution"):
+                bit_resolution = self._parse_int_value(content)
             else:
                 for prefix, (attr, field_type) in AS_GENERAL_FIELDS.items():
                     if content.startswith(prefix):
                         setattr(streaming, attr, self._extract_value(content, field_type))
                         break
             self._advance()
+
+        # UAC 3.0: Create format descriptor from inline fields if present
+        if subslot_size > 0 or bit_resolution > 0:
+            fmt = FormatTypeDescriptor()
+            fmt.subframe_size = subslot_size
+            fmt.bit_resolution = bit_resolution
+            fmt.format_type = 1  # TYPE_I
+            # Channel count from AS_GENERAL
+            if hasattr(streaming, '_nr_channels'):
+                fmt.nr_channels = streaming._nr_channels
+            streaming.format = fmt
 
         self._current_config.streaming_interfaces.append(streaming)
 

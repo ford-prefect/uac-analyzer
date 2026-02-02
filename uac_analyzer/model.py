@@ -770,12 +770,16 @@ class USBAudioDevice:
         return False
 
     def select_best_configuration(self) -> None:
-        """Select the best configuration (highest UAC version)."""
+        """Select the best configuration.
+
+        Prefers UAC 2.0 over UAC 3.0 because UAC 3.0 channel/format info is stored
+        in cluster descriptors which aren't available in lsusb output.
+        """
         version_priority = {
             UACVersion.UNKNOWN: 0,
             UACVersion.UAC_1_0: 1,
-            UACVersion.UAC_2_0: 2,
-            UACVersion.UAC_3_0: 3,
+            UACVersion.UAC_3_0: 2,  # UAC 3.0 data incomplete in lsusb, prefer 2.0
+            UACVersion.UAC_2_0: 3,
         }
 
         best_index = 0

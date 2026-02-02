@@ -316,10 +316,10 @@ class TestMultiConfigDevice:
         assert UACVersion.UAC_2_0 in versions
         assert UACVersion.UAC_3_0 in versions
 
-    def test_default_selects_highest_version(self, apple_dongle):
-        """Test that highest UAC version is selected by default."""
-        # Should select UAC 3.0 by default (highest)
-        assert apple_dongle.uac_version == UACVersion.UAC_3_0
+    def test_default_selects_uac2_over_uac3(self, apple_dongle):
+        """Test that UAC 2.0 is preferred over UAC 3.0 (UAC 3.0 parsing is incomplete)."""
+        # Should select UAC 2.0 by default (UAC 3.0 cluster descriptors not in lsusb)
+        assert apple_dongle.uac_version == UACVersion.UAC_2_0
 
     def test_select_configuration_uac2(self, apple_dongle):
         """Test selecting UAC 2.0 configuration."""

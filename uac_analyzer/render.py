@@ -264,7 +264,10 @@ def render_report(device: USBAudioDevice, graph: Optional[TopologyGraph] = None,
         )
         if other_versions:
             other_str = ", ".join(v.value for v in other_versions)
-            lines.append(f"  Note: Device also supports UAC {other_str}. Use --uac-version to select.")
+            note = f"  Note: Device also supports UAC {other_str}. Use --uac-version to select."
+            if UACVersion.UAC_3_0 in other_versions:
+                note += " (UAC 3.0 support is incomplete)"
+            lines.append(note)
 
     lines.append("")
 
@@ -377,7 +380,10 @@ def render_summary(device: USBAudioDevice) -> str:
         )
         if other_versions:
             other_str = ", ".join(v.value for v in other_versions)
-            lines.append(f"Note: Device also supports UAC {other_str}. Use --uac-version to select.")
+            note = f"Note: Device also supports UAC {other_str}. Use --uac-version to select."
+            if UACVersion.UAC_3_0 in other_versions:
+                note += " (UAC 3.0 support is incomplete)"
+            lines.append(note)
 
     graph = build_topology(device)
 
