@@ -14,6 +14,12 @@ The tool uses [uv](https://github.com/astral-sh/uv), so to run the tool:
 $ lsusb -v <vid>:<pid> | uv run uac-analyzer
 ```
 
+Or if you have the output in a file already:
+
+```sh
+$ uv run uac-analyzer <path-to-lsusb-output.txt>
+```
+
 ## Example
 
 This is the output for the Apple USB-C to 3.5mm dongle.
