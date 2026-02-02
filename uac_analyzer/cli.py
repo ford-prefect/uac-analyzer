@@ -11,6 +11,7 @@ import sys
 from typing import Optional
 
 from .parser import parse_lsusb, ParseError
+from .model import UACVersion
 from .topology import build_topology
 from .bandwidth import analyze_bandwidth, format_bandwidth_table
 from .render import render_full, render_topology_only, render_report, render_summary
@@ -47,6 +48,12 @@ def create_parser() -> argparse.ArgumentParser:
         "-v", "--version",
         action="store_true",
         help="Show version and exit",
+    )
+
+    parser.add_argument(
+        "--uac-version",
+        choices=["1", "2", "3"],
+        help="Prefer specific UAC version for multi-config devices",
     )
 
     return parser
@@ -104,6 +111,19 @@ def main() -> int:
             import traceback
             traceback.print_exc()
         return 1
+
+    # Select UAC version if specified, otherwise best is already selected by parser
+    if args.uac_version:
+        version_map = {
+            "1": UACVersion.UAC_1_0,
+            "2": UACVersion.UAC_2_0,
+            "3": UACVersion.UAC_3_0,
+        }
+        preferred_version = version_map.get(args.uac_version)
+        if preferred_version and not device.select_configuration(preferred_version):
+            if not args.quiet:
+                print(f"Warning: UAC {preferred_version.value} not available, using default",
+                      file=sys.stderr)
 
     # Check if we found any audio content
     if not device.audio_control and not device.streaming_interfaces:

@@ -293,3 +293,61 @@ class TestTerminalTypes:
         name = get_terminal_type_name(0x02FF)
         assert "Input" in name
         assert "0x02FF" in name
+
+
+class TestMultiConfigDevice:
+    """Tests for devices with multiple UAC configurations."""
+
+    @pytest.fixture
+    def apple_dongle(self):
+        """Load and parse Apple dongle with UAC 2.0 and 3.0 configs."""
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            return parse_lsusb(f.read())
+
+    def test_multiple_configurations_parsed(self, apple_dongle):
+        """Test that multiple configurations are parsed."""
+        # Apple dongle has 3 configurations (including a third we may not fully parse)
+        assert len(apple_dongle.configurations) >= 2
+
+    def test_available_uac_versions(self, apple_dongle):
+        """Test detection of available UAC versions."""
+        versions = apple_dongle.available_uac_versions
+        assert UACVersion.UAC_2_0 in versions
+        assert UACVersion.UAC_3_0 in versions
+
+    def test_default_selects_highest_version(self, apple_dongle):
+        """Test that highest UAC version is selected by default."""
+        # Should select UAC 3.0 by default (highest)
+        assert apple_dongle.uac_version == UACVersion.UAC_3_0
+
+    def test_select_configuration_uac2(self, apple_dongle):
+        """Test selecting UAC 2.0 configuration."""
+        result = apple_dongle.select_configuration(UACVersion.UAC_2_0)
+        assert result is True
+        assert apple_dongle.uac_version == UACVersion.UAC_2_0
+        assert apple_dongle.audio_control is not None
+
+    def test_select_configuration_uac3(self, apple_dongle):
+        """Test selecting UAC 3.0 configuration."""
+        # First select 2.0
+        apple_dongle.select_configuration(UACVersion.UAC_2_0)
+        # Then select 3.0
+        result = apple_dongle.select_configuration(UACVersion.UAC_3_0)
+        assert result is True
+        assert apple_dongle.uac_version == UACVersion.UAC_3_0
+
+    def test_select_unavailable_version(self, apple_dongle):
+        """Test selecting unavailable UAC version returns False."""
+        result = apple_dongle.select_configuration(UACVersion.UAC_1_0)
+        assert result is False
+        # Should keep current selection
+        assert apple_dongle.uac_version in (UACVersion.UAC_2_0, UACVersion.UAC_3_0)
+
+    def test_each_config_has_audio_data(self, apple_dongle):
+        """Test that each configuration has its own audio data."""
+        for config in apple_dongle.configurations:
+            # At least the audio configs should have audio control
+            if config.uac_version != UACVersion.UNKNOWN:
+                assert config.audio_control is not None
+                assert config.audio_control.header is not None

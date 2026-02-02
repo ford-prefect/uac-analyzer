@@ -684,10 +684,9 @@ class AudioControlInterface:
 
 
 @dataclass
-class USBAudioDevice:
-    """Complete USB Audio Device model."""
-    device: DeviceDescriptor = field(default_factory=DeviceDescriptor)
-    configuration: Optional[ConfigurationDescriptor] = None
+class AudioConfiguration:
+    """A single USB configuration with its audio data."""
+    config: ConfigurationDescriptor = field(default_factory=ConfigurationDescriptor)
     audio_control: Optional[AudioControlInterface] = None
     streaming_interfaces: list[AudioStreamingInterface] = field(default_factory=list)
     alternate_settings: list[AlternateSetting] = field(default_factory=list)
@@ -698,6 +697,97 @@ class USBAudioDevice:
         if self.audio_control and self.audio_control.header:
             return self.audio_control.header.uac_version
         return UACVersion.UNKNOWN
+
+
+@dataclass
+class USBAudioDevice:
+    """Complete USB Audio Device model."""
+    device: DeviceDescriptor = field(default_factory=DeviceDescriptor)
+    configurations: list[AudioConfiguration] = field(default_factory=list)
+    _selected_index: int = 0
+
+    # Convenience properties that delegate to selected config
+    @property
+    def _selected_config(self) -> Optional[AudioConfiguration]:
+        """Get the currently selected configuration."""
+        if 0 <= self._selected_index < len(self.configurations):
+            return self.configurations[self._selected_index]
+        return None
+
+    @property
+    def configuration(self) -> Optional[ConfigurationDescriptor]:
+        """Get configuration descriptor of selected config."""
+        config = self._selected_config
+        return config.config if config else None
+
+    @property
+    def audio_control(self) -> Optional[AudioControlInterface]:
+        """Get audio control of selected config."""
+        config = self._selected_config
+        return config.audio_control if config else None
+
+    @property
+    def streaming_interfaces(self) -> list[AudioStreamingInterface]:
+        """Get streaming interfaces of selected config."""
+        config = self._selected_config
+        return config.streaming_interfaces if config else []
+
+    @property
+    def alternate_settings(self) -> list[AlternateSetting]:
+        """Get alternate settings of selected config."""
+        config = self._selected_config
+        return config.alternate_settings if config else []
+
+    @property
+    def uac_version(self) -> UACVersion:
+        """Get UAC version from selected config's audio control header."""
+        config = self._selected_config
+        return config.uac_version if config else UACVersion.UNKNOWN
+
+    @property
+    def available_uac_versions(self) -> set[UACVersion]:
+        """Get all UAC versions available across configurations."""
+        versions = set()
+        for config in self.configurations:
+            version = config.uac_version
+            if version != UACVersion.UNKNOWN:
+                versions.add(version)
+        return versions
+
+    def select_configuration(self, version: UACVersion) -> bool:
+        """Select a configuration by UAC version.
+
+        Args:
+            version: The UAC version to select
+
+        Returns:
+            True if a matching configuration was found and selected
+        """
+        for i, config in enumerate(self.configurations):
+            if config.uac_version == version:
+                self._selected_index = i
+                return True
+        return False
+
+    def select_best_configuration(self) -> None:
+        """Select the best configuration (highest UAC version)."""
+        version_priority = {
+            UACVersion.UNKNOWN: 0,
+            UACVersion.UAC_1_0: 1,
+            UACVersion.UAC_2_0: 2,
+            UACVersion.UAC_3_0: 3,
+        }
+
+        best_index = 0
+        best_priority = -1
+
+        for i, config in enumerate(self.configurations):
+            priority = version_priority.get(config.uac_version, 0)
+            if priority > best_priority:
+                best_priority = priority
+                best_index = i
+
+        self._selected_index = best_index
 
     @property
     def device_name(self) -> str:

@@ -212,6 +212,7 @@ from .model import (
     FormatTypeDescriptor,
     AlternateSetting,
     AudioControlInterface,
+    AudioConfiguration,
     USBAudioDevice,
 )
 
@@ -277,11 +278,16 @@ class LsusbParser:
     AS_FORMAT_SPECIFIC = 0x03
 
     def __init__(self, text: str):
-        """Initialize parser with lsusb -v text output."""
+        """Initialize parser with lsusb -v text output.
+
+        Args:
+            text: The text output from `lsusb -v`
+        """
         self.text = text
         self.lines: list[LsusbLine] = []
         self.pos = 0
         self._uac_version: UACVersion = UACVersion.UNKNOWN
+        self._current_config: Optional[AudioConfiguration] = None
         self._tokenize()
 
     def _tokenize(self) -> None:
@@ -416,12 +422,17 @@ class LsusbParser:
             elif line.content.startswith("Device Descriptor:"):
                 device.device = self._parse_device_descriptor()
             elif line.content.startswith("Configuration Descriptor:"):
-                device.configuration = self._parse_configuration_descriptor(device)
+                audio_config = self._parse_configuration_descriptor()
+                device.configurations.append(audio_config)
             else:
                 self._advance()
 
-        # Build alternate settings list from streaming interfaces
-        device.alternate_settings = self._build_alternate_settings(device)
+        # Build alternate settings for each configuration
+        for audio_config in device.configurations:
+            audio_config.alternate_settings = self._build_alternate_settings_for_config(audio_config)
+
+        # Select best configuration by default
+        device.select_best_configuration()
 
         return device
 
@@ -482,60 +493,49 @@ class LsusbParser:
 
         return desc
 
-    def _parse_configuration_descriptor(self, device: USBAudioDevice) -> ConfigurationDescriptor:
+    def _parse_configuration_descriptor(self) -> AudioConfiguration:
         """Parse Configuration Descriptor block."""
-        config = ConfigurationDescriptor()
+        """Parse Configuration Descriptor block into an AudioConfiguration."""
+        audio_config = AudioConfiguration()
+        audio_config.config = ConfigurationDescriptor()
         start_indent = self._current().indent
         self._advance()
 
-        # For multi-config devices, prefer keeping the first valid UAC 2.0/3.0 config
-        # Only reset if we don't have valid audio control data yet
-        if device.configuration is not None:
-            has_valid_audio = (
-                device.audio_control is not None
-                and device.audio_control.header is not None
-                and device.audio_control.header.uac_version in (UACVersion.UAC_2_0, UACVersion.UAC_3_0)
-            )
-            if has_valid_audio:
-                # Skip parsing this configuration, keep existing audio data
-                while self._current() and self._current().indent > start_indent:
-                    self._advance()
-                return device.configuration
-            # Reset for this new configuration attempt
-            device.audio_control = None
-            device.streaming_interfaces = []
-            self._uac_version = UACVersion.UNKNOWN
+        # Reset UAC version for this new configuration
+        self._uac_version = UACVersion.UNKNOWN
+        self._current_config = audio_config
 
         while self._current() and self._current().indent > start_indent:
             line = self._current()
             content = line.content
 
             if content.startswith("bConfigurationValue"):
-                config.config_value = self._parse_int_value(content)
+                audio_config.config.config_value = self._parse_int_value(content)
                 self._advance()
             elif content.startswith("bNumInterfaces"):
-                config.num_interfaces = self._parse_int_value(content)
+                audio_config.config.num_interfaces = self._parse_int_value(content)
                 self._advance()
             elif content.startswith("iConfiguration"):
                 match = re.search(r'iConfiguration\s+\d+\s+(.+)', content)
                 if match:
-                    config.config_name = match.group(1).strip()
+                    audio_config.config.config_name = match.group(1).strip()
                 self._advance()
             elif content.startswith("bmAttributes"):
-                config.attributes = self._parse_hex_value(content)
+                audio_config.config.attributes = self._parse_hex_value(content)
                 self._advance()
             elif content.startswith("MaxPower"):
-                config.max_power_ma = self._parse_int_value(content)
+                audio_config.config.max_power_ma = self._parse_int_value(content)
                 self._advance()
             elif content.startswith("Interface Descriptor:"):
-                iface = self._parse_interface_descriptor(device)
-                config.interfaces.append(iface)
+                iface = self._parse_interface_descriptor()
+                audio_config.config.interfaces.append(iface)
             else:
                 self._advance()
 
-        return config
+        self._current_config = None
+        return audio_config
 
-    def _parse_interface_descriptor(self, device: USBAudioDevice) -> InterfaceDescriptor:
+    def _parse_interface_descriptor(self) -> InterfaceDescriptor:
         """Parse Interface Descriptor block."""
         iface = InterfaceDescriptor()
         start_indent = self._current().indent
@@ -562,6 +562,12 @@ class LsusbParser:
                 self._advance()
             elif content.startswith("bInterfaceProtocol"):
                 iface.interface_protocol = self._parse_int_value(content)
+                # Detect UAC version from protocol for Audio Control interfaces
+                if iface.interface_class == self.AUDIO_CLASS and iface.interface_subclass == self.AUDIO_CONTROL_SUBCLASS:
+                    if iface.interface_protocol == 48:  # 0x30 = UAC 3.0
+                        self._uac_version = UACVersion.UAC_3_0
+                    elif iface.interface_protocol == 32:  # 0x20 = UAC 2.0
+                        self._uac_version = UACVersion.UAC_2_0
                 self._advance()
             elif content.startswith("iInterface"):
                 match = re.search(r'iInterface\s+\d+\s+(.+)', content)
@@ -572,9 +578,9 @@ class LsusbParser:
                 ep = self._parse_endpoint_descriptor()
                 iface.endpoints.append(ep)
             elif content.startswith("AudioControl Interface Descriptor:"):
-                self._parse_audio_control_descriptor(device)
+                self._parse_audio_control_descriptor()
             elif content.startswith("AudioStreaming Interface Descriptor:"):
-                self._parse_audio_streaming_descriptor(device, iface)
+                self._parse_audio_streaming_descriptor(iface)
             else:
                 self._advance()
 
@@ -651,11 +657,20 @@ class LsusbParser:
 
             self._advance()
 
-    def _parse_audio_control_descriptor(self, device: USBAudioDevice) -> None:
+    def _parse_audio_control_descriptor(self) -> None:
         """Parse AudioControl Interface Descriptor."""
-        if not device.audio_control:
-            device.audio_control = AudioControlInterface()
+        if self._current_config is None:
+            # Skip if no current config
+            start_indent = self._current().indent
+            self._advance()
+            while self._current() and self._current().indent > start_indent:
+                self._advance()
+            return
 
+        if not self._current_config.audio_control:
+            self._current_config.audio_control = AudioControlInterface()
+
+        ac = self._current_config.audio_control
         start_indent = self._current().indent
         self._advance()
 
@@ -675,27 +690,27 @@ class LsusbParser:
         is_uac3 = self._uac_version == UACVersion.UAC_3_0
 
         if subtype == self.AC_HEADER:
-            self._parse_ac_header(device.audio_control, start_indent)
+            self._parse_ac_header(ac, start_indent)
         elif subtype == self.AC_INPUT_TERMINAL:
-            self._parse_input_terminal(device.audio_control, start_indent)
+            self._parse_input_terminal(ac, start_indent)
         elif subtype == self.AC_OUTPUT_TERMINAL:
-            self._parse_output_terminal(device.audio_control, start_indent)
+            self._parse_output_terminal(ac, start_indent)
         elif subtype == self.AC_MIXER_UNIT or (is_uac3 and subtype == self.AC3_MIXER_UNIT):
-            self._parse_mixer_unit(device.audio_control, start_indent)
+            self._parse_mixer_unit(ac, start_indent)
         elif subtype == self.AC_SELECTOR_UNIT or (is_uac3 and subtype == self.AC3_SELECTOR_UNIT):
-            self._parse_selector_unit(device.audio_control, start_indent)
+            self._parse_selector_unit(ac, start_indent)
         elif subtype == self.AC_FEATURE_UNIT or (is_uac3 and subtype == self.AC3_FEATURE_UNIT):
-            self._parse_feature_unit(device.audio_control, start_indent)
+            self._parse_feature_unit(ac, start_indent)
         elif subtype == self.AC_PROCESSING_UNIT or (is_uac3 and subtype == self.AC3_PROCESSING_UNIT):
-            self._parse_processing_unit(device.audio_control, start_indent)
+            self._parse_processing_unit(ac, start_indent)
         elif subtype == self.AC_EXTENSION_UNIT or (is_uac3 and subtype == self.AC3_EXTENSION_UNIT):
-            self._parse_extension_unit(device.audio_control, start_indent)
+            self._parse_extension_unit(ac, start_indent)
         elif subtype == self.AC_CLOCK_SOURCE or (is_uac3 and subtype == self.AC3_CLOCK_SOURCE):
-            self._parse_clock_source(device.audio_control, start_indent)
+            self._parse_clock_source(ac, start_indent)
         elif subtype == self.AC_CLOCK_SELECTOR or (is_uac3 and subtype == self.AC3_CLOCK_SELECTOR):
-            self._parse_clock_selector(device.audio_control, start_indent)
+            self._parse_clock_selector(ac, start_indent)
         elif subtype == self.AC_CLOCK_MULTIPLIER or (is_uac3 and subtype == self.AC3_CLOCK_MULTIPLIER):
-            self._parse_clock_multiplier(device.audio_control, start_indent)
+            self._parse_clock_multiplier(ac, start_indent)
         else:
             # Skip unknown descriptor
             while self._current() and self._current().indent > start_indent:
@@ -736,6 +751,10 @@ class LsusbParser:
                 header.controls = self._parse_hex_value(content)
 
             self._advance()
+
+        # If no bcdADC was found (UAC 3.0), use version detected from interface protocol
+        if header.uac_version == UACVersion.UNKNOWN and self._uac_version != UACVersion.UNKNOWN:
+            header.uac_version = self._uac_version
 
         ac.header = header
 
@@ -880,7 +899,7 @@ class LsusbParser:
         self._parse_descriptor_fields(clock, CLOCK_MULTIPLIER_FIELDS, start_indent)
         ac.clock_multipliers.append(clock)
 
-    def _parse_audio_streaming_descriptor(self, device: USBAudioDevice, iface: InterfaceDescriptor) -> None:
+    def _parse_audio_streaming_descriptor(self, iface: InterfaceDescriptor) -> None:
         """Parse AudioStreaming Interface Descriptor."""
         start_indent = self._current().indent
         self._advance()
@@ -896,16 +915,21 @@ class LsusbParser:
             self._advance()
 
         if subtype == self.AS_GENERAL:
-            self._parse_as_general(device, iface, start_indent)
+            self._parse_as_general(iface, start_indent)
         elif subtype == self.AS_FORMAT_TYPE:
-            self._parse_as_format_type(device, start_indent)
+            self._parse_as_format_type(start_indent)
         else:
             # Skip unknown descriptor
             while self._current() and self._current().indent > start_indent:
                 self._advance()
 
-    def _parse_as_general(self, device: USBAudioDevice, iface: InterfaceDescriptor, start_indent: int) -> None:
+    def _parse_as_general(self, iface: InterfaceDescriptor, start_indent: int) -> None:
         """Parse AS General descriptor."""
+        if self._current_config is None:
+            while self._current() and self._current().indent > start_indent:
+                self._advance()
+            return
+
         streaming = AudioStreamingInterface()
         streaming.interface_number = iface.interface_number
         streaming.alternate_setting = iface.alternate_setting
@@ -923,9 +947,9 @@ class LsusbParser:
                         break
             self._advance()
 
-        device.streaming_interfaces.append(streaming)
+        self._current_config.streaming_interfaces.append(streaming)
 
-    def _parse_as_format_type(self, device: USBAudioDevice, start_indent: int) -> None:
+    def _parse_as_format_type(self, start_indent: int) -> None:
         """Parse AS Format Type descriptor."""
         fmt = FormatTypeDescriptor()
 
@@ -943,22 +967,22 @@ class LsusbParser:
             self._advance()
 
         # Attach format to most recent streaming interface
-        if device.streaming_interfaces:
-            streaming = device.streaming_interfaces[-1]
+        if self._current_config and self._current_config.streaming_interfaces:
+            streaming = self._current_config.streaming_interfaces[-1]
             streaming.format = fmt
             # UAC 2.0: copy channel count from AS General to format if not set
             if fmt.nr_channels == 0 and hasattr(streaming, '_nr_channels'):
                 fmt.nr_channels = streaming._nr_channels
 
-    def _build_alternate_settings(self, device: USBAudioDevice) -> list[AlternateSetting]:
-        """Build alternate settings from parsed streaming interfaces."""
+    def _build_alternate_settings_for_config(self, audio_config: AudioConfiguration) -> list[AlternateSetting]:
+        """Build alternate settings from parsed streaming interfaces for a single config."""
         alt_settings = []
 
         # Map streaming interfaces to their endpoints
-        if not device.configuration:
+        if not audio_config.config:
             return alt_settings
 
-        for streaming in device.streaming_interfaces:
+        for streaming in audio_config.streaming_interfaces:
             alt = AlternateSetting()
             alt.interface_number = streaming.interface_number
             alt.alternate_setting = streaming.alternate_setting
@@ -966,7 +990,7 @@ class LsusbParser:
             alt.format = streaming.format
 
             # Find matching interface descriptor for endpoint
-            for iface in device.configuration.interfaces:
+            for iface in audio_config.config.interfaces:
                 if (iface.interface_number == streaming.interface_number and
                     iface.alternate_setting == streaming.alternate_setting):
                     if iface.endpoints:

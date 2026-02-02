@@ -253,6 +253,19 @@ def render_report(device: USBAudioDevice, graph: Optional[TopologyGraph] = None,
     lines.append(f"  VID:PID:      {device.device.vendor_id:04X}:{device.device.product_id:04X}")
     lines.append(f"  USB Version:  {device.device.usb_version}")
     lines.append(f"  UAC Version:  {device.uac_version.value}")
+
+    # Show note if device supports multiple UAC versions
+    if len(device.available_uac_versions) > 1:
+        current = device.uac_version
+        other_versions = sorted(
+            [v for v in device.available_uac_versions if v != current],
+            key=lambda v: v.value,
+            reverse=True
+        )
+        if other_versions:
+            other_str = ", ".join(v.value for v in other_versions)
+            lines.append(f"  Note: Device also supports UAC {other_str}. Use --uac-version to select.")
+
     lines.append("")
 
     # Topology Description
@@ -353,6 +366,18 @@ def render_summary(device: USBAudioDevice) -> str:
     lines.append(f"Device: {device.device_name}")
     lines.append(f"Manufacturer: {device.manufacturer_name}")
     lines.append(f"UAC Version: {device.uac_version.value}")
+
+    # Show note if device supports multiple UAC versions
+    if len(device.available_uac_versions) > 1:
+        current = device.uac_version
+        other_versions = sorted(
+            [v for v in device.available_uac_versions if v != current],
+            key=lambda v: v.value,
+            reverse=True
+        )
+        if other_versions:
+            other_str = ", ".join(v.value for v in other_versions)
+            lines.append(f"Note: Device also supports UAC {other_str}. Use --uac-version to select.")
 
     graph = build_topology(device)
 
