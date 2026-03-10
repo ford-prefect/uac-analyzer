@@ -19,6 +19,7 @@ from .topology import (
     SignalPath,
     get_playback_paths,
     get_capture_paths,
+    get_internal_paths,
     build_topology,
 )
 from .bandwidth import (
@@ -63,6 +64,17 @@ def render_topology(graph: TopologyGraph, width: int = 80) -> str:
         lines.append("CAPTURE PATHS (Device -> Host)")
         lines.append("-" * 40)
         for i, path in enumerate(capture_paths, 1):
+            path_diagram = _render_signal_path(path)
+            lines.append(f"Path {i}:")
+            lines.extend(path_diagram)
+            lines.append("")
+
+    # Render internal/monitoring paths (e.g. sidetone)
+    internal_paths = get_internal_paths(graph)
+    if internal_paths:
+        lines.append("INTERNAL PATHS")
+        lines.append("-" * 40)
+        for i, path in enumerate(internal_paths, 1):
             path_diagram = _render_signal_path(path)
             lines.append(f"Path {i}:")
             lines.extend(path_diagram)
@@ -290,6 +302,13 @@ def render_report(device: USBAudioDevice, graph: Optional[TopologyGraph] = None,
             for path in capture_paths:
                 if path.input_node:
                     lines.append(f"    <- {path.input_node.description}")
+
+        internal_paths = get_internal_paths(graph)
+        if internal_paths:
+            lines.append("  Internal:")
+            for path in internal_paths:
+                if path.input_node and path.output_node:
+                    lines.append(f"    {path.input_node.description} -> {path.output_node.description}")
 
         lines.append("")
 

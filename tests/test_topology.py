@@ -10,6 +10,7 @@ from uac_analyzer.topology import (
     NodeType,
     get_playback_paths,
     get_capture_paths,
+    get_internal_paths,
 )
 
 
@@ -213,6 +214,44 @@ class TestGraphQueries:
         # Output terminal has no targets
         targets = uac1_graph.get_targets(6)
         assert len(targets) == 0
+
+
+class TestInternalPaths:
+    """Tests for internal/monitoring path detection (e.g. sidetone)."""
+
+    @pytest.fixture
+    def apple_graph(self):
+        """Build topology from Apple dongle fixture."""
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        return build_topology(device)
+
+    def test_sidetone_path_found(self, apple_graph):
+        """Test that the sidetone path is detected as an internal path."""
+        internal = get_internal_paths(apple_graph)
+        assert len(internal) == 1
+
+    def test_sidetone_path_nodes(self, apple_graph):
+        """Test sidetone path: IT4 -> FU7 -> Mixer8 -> FU2 -> OT3."""
+        internal = get_internal_paths(apple_graph)
+        path = internal[0]
+        node_ids = [n.id for n in path.nodes]
+        assert node_ids == [4, 7, 8, 2, 3]
+
+    def test_sidetone_path_rendered(self, apple_graph):
+        """Test that internal paths appear in topology rendering."""
+        from uac_analyzer.render import render_topology
+        output = render_topology(apple_graph)
+        assert "INTERNAL PATHS" in output
+
+    def test_no_internal_paths_for_simple_device(self):
+        """Test that devices without internal routing have no internal paths."""
+        fixture_path = FIXTURES_DIR / "uac1_stereo_headset.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        graph = build_topology(device)
+        assert len(get_internal_paths(graph)) == 0
 
 
 class TestEmptyTopology:
