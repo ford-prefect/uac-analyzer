@@ -237,6 +237,46 @@ class TestBandwidthInfo:
         assert not info.is_zero_bandwidth
 
 
+class TestFullSpeedBandwidth:
+    """Tests for Full Speed device bandwidth (Apple dongle)."""
+
+    @pytest.fixture
+    def apple_device(self):
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            return parse_lsusb(f.read())
+
+    def test_usb_speed_parsed(self, apple_device):
+        """Test that Negotiated speed line is parsed."""
+        assert apple_device.device.usb_speed == "Full Speed"
+
+    def test_full_speed_playback_bandwidth(self, apple_device):
+        """Test Full Speed device uses 1000 packets/sec, not 8000."""
+        analysis = analyze_bandwidth(apple_device)
+        playback = analysis.playback_interfaces[0]
+
+        # Alt 1: 2ch 24-bit, max_packet_size=288 → 288 * 1000 = 288000 B/s
+        alt1 = playback.alternate_settings[0]
+        assert alt1.alternate_setting == 1
+        assert alt1.max_packet_size == 288
+        assert alt1.bytes_per_second == 288_000
+
+        # Alt 2: 2ch 16-bit, max_packet_size=192 → 192 * 1000 = 192000 B/s
+        alt2 = playback.alternate_settings[1]
+        assert alt2.alternate_setting == 2
+        assert alt2.max_packet_size == 192
+        assert alt2.bytes_per_second == 192_000
+
+    def test_full_speed_bandwidth_percent(self, apple_device):
+        """Test bandwidth percentage uses 12Mbps denominator for Full Speed."""
+        analysis = analyze_bandwidth(apple_device)
+        playback = analysis.playback_interfaces[0]
+        alt1 = playback.alternate_settings[0]
+
+        # 288000 / (12_000_000 / 8) * 100 = 288000 / 1500000 * 100 = 19.2%
+        assert abs(alt1.bandwidth_percent - 19.2) < 0.1
+
+
 class TestEmptyAnalysis:
     """Tests for empty or minimal analysis cases."""
 

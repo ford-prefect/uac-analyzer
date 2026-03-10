@@ -213,6 +213,7 @@ class DeviceDescriptor:
     max_packet_size_0: int = 0
     num_configurations: int = 0
     usb_version: str = ""
+    usb_speed: str = ""  # e.g. "Full Speed", "High Speed"
 
 
 @dataclass

@@ -158,24 +158,28 @@ class DeviceBandwidthAnalysis:
             return f"{total} B/s"
 
 
-def analyze_bandwidth(device: USBAudioDevice) -> DeviceBandwidthAnalysis:
+def analyze_bandwidth(device: USBAudioDevice, usb_speed: str = "") -> DeviceBandwidthAnalysis:
     """
     Analyze bandwidth for all streaming interfaces in a USB audio device.
 
     Args:
         device: The parsed USB audio device
+        usb_speed: USB speed string (e.g. "Full Speed", "High Speed").
+                   If empty, falls back to device.device.usb_speed, then heuristic.
 
     Returns:
         DeviceBandwidthAnalysis with complete bandwidth information
     """
     analysis = DeviceBandwidthAnalysis()
 
+    effective_speed = usb_speed or device.device.usb_speed
+
     # Group alternate settings by interface number
     interface_settings: dict[int, list[BandwidthInfo]] = {}
 
     for alt in device.alternate_settings:
         if alt.streaming_interface:
-            bw_info = _analyze_alternate_setting(device, alt)
+            bw_info = _analyze_alternate_setting(device, alt, effective_speed)
             if alt.interface_number not in interface_settings:
                 interface_settings[alt.interface_number] = []
             interface_settings[alt.interface_number].append(bw_info)
@@ -219,7 +223,8 @@ def analyze_bandwidth(device: USBAudioDevice) -> DeviceBandwidthAnalysis:
     return analysis
 
 
-def _analyze_alternate_setting(device: USBAudioDevice, alt: AlternateSetting) -> BandwidthInfo:
+def _analyze_alternate_setting(device: USBAudioDevice, alt: AlternateSetting,
+                               usb_speed: str = "") -> BandwidthInfo:
     """Analyze a single alternate setting."""
     bw = BandwidthInfo(
         interface_number=alt.interface_number,
@@ -259,19 +264,25 @@ def _analyze_alternate_setting(device: USBAudioDevice, alt: AlternateSetting) ->
 
         bw.bytes_per_frame = ep.max_packet_size
 
-        # Assume high-speed (most common for audio devices)
-        # For FS devices, interval would typically indicate 1ms framing
-        # This is a simplification - real bandwidth depends on USB speed
-        if ep.interval <= 1:
-            # High-speed: 8000 microframes per second
-            bw.bytes_per_second = ep.max_packet_size * 8000
+        # Determine packets per second and bus bandwidth based on USB speed
+        speed = usb_speed.lower()
+        if "full" in speed:
+            packets_per_sec = 1000
+            bus_bandwidth = 12_000_000 // 8  # 12 Mbps = 1.5 MB/s
+        elif "high" in speed:
+            packets_per_sec = 8000
+            bus_bandwidth = 480_000_000 // 8  # 480 Mbps = 60 MB/s
         else:
-            # Full-speed: 1000 frames per second
-            bw.bytes_per_second = ep.max_packet_size * 1000
+            # Fallback heuristic: infer from bInterval
+            if ep.interval <= 1:
+                packets_per_sec = 8000
+                bus_bandwidth = 480_000_000 // 8
+            else:
+                packets_per_sec = 1000
+                bus_bandwidth = 12_000_000 // 8
 
-        # Calculate bandwidth percentage (of USB 2.0 high-speed 480 Mbps)
-        usb_hs_bandwidth = 480_000_000 // 8  # 60 MB/s
-        bw.bandwidth_percent = (bw.bytes_per_second / usb_hs_bandwidth) * 100
+        bw.bytes_per_second = ep.max_packet_size * packets_per_sec
+        bw.bandwidth_percent = (bw.bytes_per_second / bus_bandwidth) * 100
 
     return bw
 

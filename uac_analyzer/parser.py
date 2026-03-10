@@ -412,6 +412,7 @@ class LsusbParser:
     def parse(self) -> USBAudioDevice:
         """Parse the lsusb output and return a USBAudioDevice."""
         device = USBAudioDevice()
+        usb_speed = ""
 
         while self._current():
             line = self._current()
@@ -419,8 +420,19 @@ class LsusbParser:
             if line.content.startswith("Bus "):
                 # Start of device - parse bus/device info if needed
                 self._advance()
+            elif line.content.startswith("Negotiated speed:"):
+                # e.g. "Negotiated speed: Full Speed (12Mbps)"
+                speed_str = line.content.split(":", 1)[1].strip()
+                # Extract speed name before parenthetical, e.g. "Full Speed"
+                paren = speed_str.find("(")
+                if paren > 0:
+                    speed_str = speed_str[:paren].strip()
+                usb_speed = speed_str
+                self._advance()
             elif line.content.startswith("Device Descriptor:"):
                 device.device = self._parse_device_descriptor()
+                if usb_speed:
+                    device.device.usb_speed = usb_speed
             elif line.content.startswith("Configuration Descriptor:"):
                 audio_config = self._parse_configuration_descriptor()
                 device.configurations.append(audio_config)
