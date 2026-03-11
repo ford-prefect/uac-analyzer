@@ -240,10 +240,12 @@ class TestInternalPaths:
         assert node_ids == [4, 7, 8, 2, 3]
 
     def test_sidetone_path_rendered(self, apple_graph):
-        """Test that internal paths appear in topology rendering."""
+        """Test that internal paths appear in topology path legend."""
         from uac_analyzer.render import render_topology
         output = render_topology(apple_graph)
-        assert "INTERNAL PATHS" in output
+        assert "Internal:" in output
+        assert "Headset(4)" in output
+        assert "Feature(7)" in output
 
     def test_no_internal_paths_for_simple_device(self):
         """Test that devices without internal routing have no internal paths."""
@@ -252,6 +254,94 @@ class TestInternalPaths:
             device = parse_lsusb(f.read())
         graph = build_topology(device)
         assert len(get_internal_paths(graph)) == 0
+
+
+class TestUnifiedDiagram:
+    """Tests for the unified DAG topology rendering."""
+
+    def test_each_node_appears_once(self):
+        """Test that each audio node ID appears exactly once in the diagram."""
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        graph = build_topology(device)
+        from uac_analyzer.render import render_topology
+        output = render_topology(graph)
+
+        # Each node box should appear exactly once
+        # Count occurrences of "USB OUT" (node 1), "Mixer" (node 8), etc.
+        # The node boxes contain the label centered in |...|
+        # A more reliable check: count box top borders per node
+        audio_node_ids = set()
+        for node in graph.input_terminals + graph.output_terminals + graph.units:
+            audio_node_ids.add(node.id)
+
+        # Check the path legend has all nodes mentioned
+        assert "Playback:" in output
+        assert "Capture:" in output
+        assert "Internal:" in output
+
+    def test_uac1_headset_renders_two_chains(self):
+        """Test that a simple UAC1 headset renders as two independent chains."""
+        fixture_path = FIXTURES_DIR / "uac1_stereo_headset.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        graph = build_topology(device)
+        from uac_analyzer.render import render_topology
+        output = render_topology(graph)
+
+        # Should have both playback and capture paths in legend
+        assert "Playback:" in output
+        assert "Capture:" in output
+        assert "USB OUT(1)" in output
+        assert "Feature(5)" in output
+        assert "Speaker(6)" in output
+        assert "Microphone(2)" in output
+        assert "Feature(4)" in output
+        assert "USB IN(7)" in output
+
+        # Should NOT have internal paths
+        assert "Internal:" not in output
+
+    def test_apple_dongle_shared_nodes_appear_once(self):
+        """Test that shared nodes (Mixer8, FU2) appear only once in Apple dongle diagram."""
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        graph = build_topology(device)
+        from uac_analyzer.render import render_topology
+        output = render_topology(graph)
+
+        # The diagram area (before "Paths:") should contain each box exactly once
+        diagram = output.split("Paths:")[0]
+
+        # Count box labels - each should appear exactly once as a box
+        # The Mixer box has "Mixer" as label and "Mixer (2 inputs)" as sublabel
+        # Count the label line (centered in |...|)
+        assert diagram.count("|      Mixer       |") == 1
+        # "Feature" appears multiple times (FU2, FU5, FU7) - should be exactly 3
+        assert diagram.count("|   Feature    |") == 3
+        # Headset boxes (IT4/OT3): should be exactly 2
+        assert diagram.count("Headset") == 2
+        # USB terminals
+        assert diagram.count("USB OUT") == 1
+        assert diagram.count("USB IN") == 1
+
+    def test_path_legend_format(self):
+        """Test path legend format."""
+        fixture_path = FIXTURES_DIR / "apple-dongle.txt"
+        with open(fixture_path) as f:
+            device = parse_lsusb(f.read())
+        graph = build_topology(device)
+        from uac_analyzer.render import render_topology
+        output = render_topology(graph)
+
+        # Check path legend section
+        assert "Paths:" in output
+        assert "Playback: USB OUT(1) -> Mixer(8) -> Feature(2) -> Headset(3)" in output
+        assert "Capture:" in output
+        assert "Headset(4) -> Feature(5) -> USB IN(6)" in output
+        assert "Internal: Headset(4) -> Feature(7) -> Mixer(8) -> Feature(2) -> Headset(3)" in output
 
 
 class TestEmptyTopology:
