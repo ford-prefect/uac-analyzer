@@ -433,16 +433,18 @@ def _draw_skip_layer_horizontal(
         if x < 0 or x >= width:
             continue
 
-        # Check if x is in a box column (inside a layer's box area)
-        in_box = False
+        # Check if x is in or adjacent to an intermediate layer's box area.
+        # We skip box columns plus a 1-char margin on each side so the
+        # pass-through line doesn't visually merge with the box border.
+        in_box_zone = False
         for layer_idx in range(src_layer + 1, tgt_layer):
             lx = layer_x[layer_idx]
             lw = col_widths[layer_idx]
-            if lx <= x < lx + lw:
-                in_box = True
+            if lx - 1 <= x < lx + lw + 1:
+                in_box_zone = True
                 break
 
-        if not in_box:
+        if not in_box_zone:
             ch = canvas[y][x]
             if ch in ('│', '┌', '└', '┐', '┘', '┼'):
                 pass
