@@ -30,21 +30,22 @@ This is the output for the Apple USB-C to 3.5mm dongle.
 AUDIO TOPOLOGY
 ================================================================================
 
-PLAYBACK PATHS (Host -> Device)
-----------------------------------------
-Path 1:
-  +-------------+     +------------------+     +--------------+     +----------+
-  |   USB OUT   |     |      Mixer       |     |   Feature    |     | Headset  |
-  | (from host) | --> | Mixer (2 inputs) | --> | Mute, Volume | --> +----------+
-  +-------------+     +------------------+     +--------------+                 
++-------------+         +--------------+       +-----------+              +--------------+     +----------+
+|   USB OUT   |──┐ ┌───>|   Feature    |──────>|   USB IN  |         ┌───>|   Feature    |────>| Headset  |
+| (from host) |  │ │    | Mute, Volume |       | (to host) |         │    | Mute, Volume |     +----------+
++-------------+  │ │    +--------------+       +-----------+         │    +--------------+
+                 │ │                                                 │
+                 └─┼──────────────────────┐                          │
+                   │                      │                          │
++----------+       │    +--------------+  │    +------------------+  │
+| Headset  |───────┼───>|   Feature    |──┼───>|      Mixer       |──┘
+|   1ch    |───────┘    | Mute, Volume |  └───>| Mixer (2 inputs) |
++----------+            +--------------+       +------------------+
 
-CAPTURE PATHS (Device -> Host)
-----------------------------------------
-Path 1:
-  +----------+     +--------------+     +-----------+
-  | Headset  |     |   Feature    |     |   USB IN  |
-  |   1ch    | --> | Mute, Volume | --> | (to host) |
-  +----------+     +--------------+     +-----------+
+Paths:
+  Playback: USB OUT(1) -> Mixer(8) -> Feature(2) -> Headset(3)
+  Capture:  Headset(4) -> Feature(5) -> USB IN(6)
+  Internal: Headset(4) -> Feature(7) -> Mixer(8) -> Feature(2) -> Headset(3)
 
 CLOCK TOPOLOGY
 ----------------------------------------
@@ -72,6 +73,8 @@ SIGNAL FLOW SUMMARY
     -> Headset
   Capture:
     <- Headset
+  Internal:
+    Headset -> Headset
 
 INPUT TERMINALS
 ----------------------------------------
@@ -118,21 +121,21 @@ Interface 1: Playback
 -------------------------------------------------------------------------------------
  Alt | Format                    | Sample Rate          | Sync         | Bandwidth   
 -------------------------------------------------------------------------------------
-   1 | 2ch 24-bit PCM            | Unknown              | Synchronous  | 2.30 MB/s   
-   2 | 2ch 16-bit PCM            | Unknown              | Synchronous  | 1.54 MB/s   
+   1 | 2ch 24-bit PCM            | Unknown              | Synchronous  | 288.0 KB/s  
+   2 | 2ch 16-bit PCM            | Unknown              | Synchronous  | 192.0 KB/s  
 
 Interface 2: Capture
   Terminal: USB Streaming (ID 6)
 -------------------------------------------------------------------------------------
  Alt | Format                    | Sample Rate          | Sync         | Bandwidth   
 -------------------------------------------------------------------------------------
-   1 | 1ch 16-bit PCM            | Unknown              | Synchronous  | 768.0 KB/s  
-   2 | 1ch 24-bit PCM            | Unknown              | Synchronous  | 1.15 MB/s   
+   1 | 1ch 16-bit PCM            | Unknown              | Synchronous  | 96.0 KB/s   
+   2 | 1ch 24-bit PCM            | Unknown              | Synchronous  | 144.0 KB/s  
 
 =====================================================================================
 BANDWIDTH SUMMARY
 -------------------------------------------------------------------------------------
-Max Playback Bandwidth: 2.30 MB/s
-Max Capture Bandwidth:  1.15 MB/s
-Max Total Bandwidth:    3.46 MB/s
+Max Playback Bandwidth: 288.0 KB/s
+Max Capture Bandwidth:  144.0 KB/s
+Max Total Bandwidth:    432.0 KB/s
 ```
