@@ -221,24 +221,46 @@ def _render_canvas(
         for row_idx, nid in enumerate(layer):
             node_grid[nid] = (layer_idx, row_idx)
 
-    # Classify edges: which need vertical routing in which gap column
+    # Classify edges
     source_edge_map: dict[int, list[TopologyEdge]] = defaultdict(list)
     target_edge_map: dict[int, list[TopologyEdge]] = defaultdict(list)
     for edge in edges:
         source_edge_map[edge.source_id].append(edge)
         target_edge_map[edge.target_id].append(edge)
 
-    # Count vertical segments needed per gap column
+    # Count vertical segments needed per gap column (between layers)
     gap_vert_count: dict[int, int] = defaultdict(int)
     for edge in edges:
         if edge.source_id in node_grid and edge.target_id in node_grid:
-            _, sr = node_grid[edge.source_id]
-            sl, _ = node_grid[edge.source_id]
+            sl, sr = node_grid[edge.source_id]
             _, tr = node_grid[edge.target_id]
             if sr != tr:
                 gap_vert_count[sl] += 1
 
-    # Calculate per-gap widths: need room for arrow chars + vertical routing
+    # Identify skip-layer cross-row edges that need inter-row gap routing.
+    # These route through the horizontal gap between rows to avoid crossing
+    # through intermediate boxes.
+    skip_cross_edges: list[TopologyEdge] = []
+    # Count how many edges route through each inter-row gap.
+    # Key: gap index (gap between row i and row i+1 has index i)
+    row_gap_edge_count: dict[int, int] = defaultdict(int)
+    for edge in edges:
+        if edge.source_id in node_grid and edge.target_id in node_grid:
+            sl, sr = node_grid[edge.source_id]
+            tl, tr = node_grid[edge.target_id]
+            if tl > sl + 1 and sr != tr:
+                skip_cross_edges.append(edge)
+                # This edge routes through the gap between the two rows
+                gap_idx = min(sr, tr)
+                row_gap_edge_count[gap_idx] += 1
+
+    # Also need a vert_x near the target layer for the second vertical jog
+    for edge in skip_cross_edges:
+        tl = node_grid[edge.target_id][0]
+        if tl > 0:
+            gap_vert_count[tl - 1] = gap_vert_count.get(tl - 1, 0) + 1
+
+    # Calculate per-layer gap widths: room for arrow chars + vertical routing
     gap_widths: list[int] = []
     for i in range(len(col_widths)):
         verts = gap_vert_count.get(i, 0)
@@ -264,14 +286,19 @@ def _render_canvas(
         x += w + gw
     total_width = x
 
-    # Compute Y positions for each row
-    row_gap = 2
+    # Compute Y positions for each row with dynamic inter-row gaps.
+    # Each gap expands by 1 line per skip-layer edge that routes through it.
+    base_row_gap = 2
+    row_gap_sizes: list[int] = []
+    for i in range(max_rows):
+        row_gap_sizes.append(base_row_gap + row_gap_edge_count.get(i, 0))
     row_y: list[int] = []
     y = 0
     for i, h in enumerate(row_heights):
         row_y.append(y)
-        y += h + row_gap
-    total_height = y - row_gap if row_y else 0
+        gap = row_gap_sizes[i] if i < len(row_gap_sizes) else base_row_gap
+        y += h + gap
+    total_height = y - (row_gap_sizes[-1] if row_gap_sizes else base_row_gap) if row_y else 0
 
     # Create canvas
     canvas = [[' '] * total_width for _ in range(total_height)]
@@ -339,10 +366,16 @@ def _render_canvas(
                 else:
                     edge_tgt_y[(e.source_id, e.target_id)] = by + min(bh - 1, (bh - 1) // 2 + i)
 
-    # Track next available vert X per gap column
+    # Track next available vert X per gap column (between layers)
     gap_x_next: dict[int, int] = {}
     for i in range(len(col_widths)):
         gap_x_next[i] = layer_x[i] + col_widths[i] + 2
+
+    # Track next available routing Y per inter-row gap
+    row_gap_y_next: dict[int, int] = {}
+    for i in range(max_rows - 1):
+        # First routing line is 1 below the bottom of the row's boxes
+        row_gap_y_next[i] = row_y[i] + row_heights[i] + 1
 
     # Sort edges: straight (same-row) first, then by crossing distance
     def edge_sort_key(e: TopologyEdge) -> tuple:
@@ -353,6 +386,7 @@ def _render_canvas(
         return (0, 0, 0)
 
     sorted_edges = sorted(edges, key=edge_sort_key)
+    skip_cross_set = set((e.source_id, e.target_id) for e in skip_cross_edges)
 
     for edge in sorted_edges:
         src_id = edge.source_id
@@ -371,33 +405,51 @@ def _render_canvas(
         src_connect_y = edge_src_y.get((src_id, tgt_id), src_y + (src_h - 1) // 2)
         tgt_connect_y = edge_tgt_y.get((src_id, tgt_id), tgt_y + (tgt_h - 1) // 2)
 
-        if src_connect_y == tgt_connect_y and tgt_layer == src_layer + 1:
+        if (src_id, tgt_id) in skip_cross_set:
+            # Skip-layer cross-row edge: route through the inter-row gap.
+            # 5-segment path:
+            #   1. Horizontal from source box to vert_x1 (gap after source layer)
+            #   2. Vertical from source_y to routing_y (in the inter-row gap)
+            #   3. Horizontal at routing_y (clear of all boxes)
+            #   4. Vertical from routing_y to target_y at vert_x2 (gap before target layer)
+            #   5. Horizontal from vert_x2 into target box
+            vert_x1 = gap_x_next[src_layer]
+            gap_x_next[src_layer] += 2
+
+            vert_x2 = gap_x_next[tgt_layer - 1]
+            gap_x_next[tgt_layer - 1] += 2
+
+            _, src_row = node_grid[src_id]
+            _, tgt_row = node_grid[tgt_id]
+            gap_idx = min(src_row, tgt_row)
+            routing_y = row_gap_y_next[gap_idx]
+            row_gap_y_next[gap_idx] += 1
+
+            # Draw all horizontals first so vertical corner detection works
+            _draw_horizontal(canvas, src_connect_y, arrow_start_x, vert_x1)
+            _draw_horizontal(canvas, routing_y, vert_x1, vert_x2)
+            _draw_horizontal(canvas, tgt_connect_y, vert_x2, arrow_end_x, arrow=True)
+            _draw_vertical(canvas, vert_x1, src_connect_y, routing_y)
+            _draw_vertical(canvas, vert_x2, routing_y, tgt_connect_y)
+
+        elif src_connect_y == tgt_connect_y and tgt_layer == src_layer + 1:
             # Same row, adjacent layers: straight horizontal arrow
             _draw_horizontal(canvas, src_connect_y, arrow_start_x, arrow_end_x, arrow=True)
         elif src_connect_y == tgt_connect_y and tgt_layer > src_layer + 1:
-            # Same row but skip-layer: route through gap columns only
-            # Draw horizontal segments through gaps, skipping over intermediate box areas
+            # Same row but skip-layer (no row crossing): route through gap
+            # columns only, skipping intermediate box areas
             _draw_skip_layer_horizontal(
                 canvas, src_connect_y, arrow_start_x, arrow_end_x,
                 src_layer, tgt_layer, layer_x, col_widths, gap_widths
             )
         else:
-            # Different rows: route through gap column after source layer
+            # Different rows, adjacent layers: route through gap column
             vert_x = gap_x_next[src_layer]
             gap_x_next[src_layer] += 2
 
-            # For skip-layer edges, route target horizontal through gaps only
-            if tgt_layer > src_layer + 1:
-                _draw_horizontal(canvas, src_connect_y, arrow_start_x, vert_x)
-                _draw_skip_layer_horizontal(
-                    canvas, tgt_connect_y, vert_x, arrow_end_x,
-                    src_layer, tgt_layer, layer_x, col_widths, gap_widths
-                )
-                _draw_vertical(canvas, vert_x, src_connect_y, tgt_connect_y)
-            else:
-                _draw_horizontal(canvas, src_connect_y, arrow_start_x, vert_x)
-                _draw_horizontal(canvas, tgt_connect_y, vert_x, arrow_end_x, arrow=True)
-                _draw_vertical(canvas, vert_x, src_connect_y, tgt_connect_y)
+            _draw_horizontal(canvas, src_connect_y, arrow_start_x, vert_x)
+            _draw_horizontal(canvas, tgt_connect_y, vert_x, arrow_end_x, arrow=True)
+            _draw_vertical(canvas, vert_x, src_connect_y, tgt_connect_y)
 
     # Convert canvas to strings, trimming trailing whitespace
     result = []
