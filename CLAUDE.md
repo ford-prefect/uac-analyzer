@@ -66,8 +66,33 @@ The parser (`parser.py`) is the most complex module:
 - Supports both UAC 1.0 and UAC 2.0 descriptor structures
 - Requires `_advance()` calls after processing each line to prevent infinite loops
 
+## Topology Renderer (`render.py`)
+
+The topology diagram uses a unified DAG layout (simplified Sugiyama) where each audio node appears exactly once:
+
+1. **Layer assignment** (`_assign_layers`): longest-path from source nodes
+2. **Row ordering** (`_order_within_layers`): barycenter sort to reduce crossings
+3. **Canvas rendering** (`_render_canvas`): 2D character grid with box-drawing edge routing
+
+Edge routing categories:
+- **Same-row adjacent**: straight horizontal `────>`
+- **Cross-row adjacent**: vertical segment through gap column between layers, with `┐└` corners
+- **Skip-layer same-row**: `_draw_skip_layer_horizontal` — draws `─` only in gap regions, skipping intermediate box columns (with 1-char margin)
+- **Skip-layer cross-row**: 5-segment path through the inter-row gap — avoids routing through intermediate boxes entirely. Inter-row gaps expand dynamically to accommodate these routing lines.
+
+Fan-out/fan-in: edges from the same node are sorted so same-row connections get the midpoint Y; cross-row connections get offset Y positions.
+
+### Known visual artifacts
+- Adjacent-layer cross-row verticals can produce `┌─┐` or `┼` where they cross a straight horizontal from the same source node (e.g. Anker dongle USB OUT line). Correct but slightly cluttered.
+
 ## Test Fixtures
 
 Sample device outputs for testing are in `tests/fixtures/`:
-- `uac1_stereo_headset.txt` - UAC 1.0 device
-- `uac2_audio_interface.txt` - UAC 2.0 device
+- `uac1_stereo_headset.txt` - UAC 1.0 simple headset (2 independent chains)
+- `uac2_audio_interface.txt` - UAC 2.0 audio interface with clock entities
+- `apple-dongle.txt` - UAC 2.0, shared nodes (Mixer/FU in both playback and sidetone)
+- `anker-dongle.txt` - UAC 1.0, mixer with internal monitoring path
+- `smsl-d6s.txt` - UAC 2.0, playback-only DAC with clock selector
+- `steelseries-arctis7.txt` - UAC 1.0, dual playback (game + chat) + capture
+- `sennheiser-gsx120.txt` - UAC 1.0, dual playback + capture with selector unit
+- `jbl-quantum-810wireless.txt` - UAC 1.0, dual playback + capture with selector unit
